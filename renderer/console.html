@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Crystal — Debug console</title><link rel="stylesheet" href="console.css"></head>
+<body>
+<header id="bar">
+  <span id="pill">backend: …</span>
+  <label><input type="checkbox" data-lv="debug" checked> debug <b id="c-debug">0</b></label>
+  <label><input type="checkbox" data-lv="info" checked> info <b id="c-info">0</b></label>
+  <label><input type="checkbox" data-lv="warn" checked> warn <b id="c-warn">0</b></label>
+  <label class="err"><input type="checkbox" data-lv="error" checked> error <b id="c-error">0</b></label>
+  <select id="src"><option value="">all sources</option></select>
+  <input id="q" type="search" placeholder="Filter text…" spellcheck="false">
+  <button id="errOnly">Errors only</button><button id="pause">Pause</button><button id="clear">Clear</button><button id="copy">Copy visible</button><button id="open">Open log file</button>
+</header>
+<div id="log"></div>
+<script src="console.js"></script>
+</body></html>

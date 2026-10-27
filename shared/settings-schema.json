@@ -1,0 +1,1246 @@
+{
+ "version": 1,
+ "sections": [
+  {
+   "id": "brain",
+   "title": "Brain (LLM)",
+   "description": "Which local language model answers you, and how it generates text. Models come from Ollama.",
+   "fields": [
+    {
+     "key": "llm.mode",
+     "label": "Model selection",
+     "type": "select",
+     "default": "auto",
+     "help": "auto picks fast/mid/heavy per message using the rules below. Or force one tier.",
+     "options": [
+      "auto",
+      "fast",
+      "mid",
+      "heavy"
+     ]
+    },
+    {
+     "key": "llm.model.fast",
+     "label": "Fast model",
+     "type": "model",
+     "default": "LiquidAI/lfm2.5-350m:latest",
+     "help": "Tiny model for quick chat. Must match a name from `ollama list`."
+    },
+    {
+     "key": "llm.model.mid",
+     "label": "Mid model",
+     "type": "model",
+     "default": "phi",
+     "help": "Mid tier. On Ollama the tag `phi` is Phi-2 (2.7B)."
+    },
+    {
+     "key": "llm.model.heavy",
+     "label": "Heavy model",
+     "type": "model",
+     "default": "mistral",
+     "help": "Big brain. On Ollama `mistral` is Mistral 7B. Needs roughly 5-8 GB RAM/VRAM."
+    },
+    {
+     "key": "llm.autoMidWords",
+     "label": "Auto: words for mid tier",
+     "type": "number",
+     "default": 25,
+     "help": "In auto mode, messages longer than this many words go to the mid model.",
+     "min": 1,
+     "max": 200,
+     "step": 1,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.autoHeavyWords",
+     "label": "Auto: words for heavy tier",
+     "type": "number",
+     "default": 80,
+     "help": "In auto mode, messages longer than this go to the heavy model.",
+     "min": 5,
+     "max": 500,
+     "step": 5,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.autoHeavyKeywords",
+     "label": "Auto: keywords that force heavy",
+     "type": "text",
+     "default": "file,folder,read,write,search,find,summarize,analyze,explain,code",
+     "help": "Comma-separated. If the message contains one, auto mode uses the heavy model."
+    },
+    {
+     "key": "llm.host",
+     "label": "Ollama address",
+     "type": "text",
+     "default": "http://127.0.0.1:11434",
+     "help": "Where the Ollama server listens."
+    },
+    {
+     "key": "llm.temperature",
+     "label": "Temperature",
+     "type": "number",
+     "default": 0.7,
+     "help": "Higher = more creative, lower = more focused.",
+     "min": 0,
+     "max": 2,
+     "step": 0.05,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.topP",
+     "label": "Top-p",
+     "type": "number",
+     "default": 0.9,
+     "help": "Nucleus sampling cutoff.",
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.topK",
+     "label": "Top-k",
+     "type": "number",
+     "default": 40,
+     "help": "Only sample from the k most likely tokens (0 = off).",
+     "min": 0,
+     "max": 200,
+     "step": 1,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.repeatPenalty",
+     "label": "Repeat penalty",
+     "type": "number",
+     "default": 1.1,
+     "help": "Discourages repeating itself.",
+     "min": 0.8,
+     "max": 2,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.maxTokens",
+     "label": "Max reply tokens",
+     "type": "number",
+     "default": 400,
+     "help": "Hard cap on reply length. Shorter replies speak faster.",
+     "min": 32,
+     "max": 4096,
+     "step": 32,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.numCtx",
+     "label": "Context window (tokens)",
+     "type": "number",
+     "default": 4096,
+     "help": "How much conversation + files the model can see. Bigger uses more RAM.",
+     "min": 512,
+     "max": 32768,
+     "step": 512,
+     "unit": "",
+     "slider": true,
+     "apply": "live"
+    },
+    {
+     "key": "llm.seed",
+     "label": "Seed (-1 = random)",
+     "type": "number",
+     "default": -1,
+     "help": "Fixed seed makes replies repeatable.",
+     "min": -1,
+     "max": 999999,
+     "step": 1,
+     "unit": "",
+     "slider": false
+    },
+    {
+     "key": "llm.keepAlive",
+     "label": "Keep model loaded",
+     "type": "text",
+     "default": "10m",
+     "help": "How long Ollama keeps the model in memory after use (e.g. 5m, 1h, -1 = forever)."
+    },
+    {
+     "key": "llm.timeout",
+     "label": "Request timeout (s)",
+     "type": "number",
+     "default": 120,
+     "help": "Give up on the model after this long.",
+     "min": 10,
+     "max": 900,
+     "step": 5,
+     "unit": "s",
+     "slider": true
+    },
+    {
+     "key": "llm.historyTurns",
+     "label": "Memory (past turns sent)",
+     "type": "number",
+     "default": 8,
+     "help": "How many previous user/assistant pairs are sent with each message.",
+     "min": 0,
+     "max": 40,
+     "step": 1,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "llm.stop",
+     "label": "Stop sequences",
+     "type": "text",
+     "default": "",
+     "help": "Comma-separated strings that end generation."
+    },
+    {
+     "key": "llm.warmup",
+     "label": "Warm up model at start",
+     "type": "bool",
+     "default": true,
+     "help": "Loads the model into memory in the background so the first reply is fast."
+    },
+    {
+     "key": "llm.assistantName",
+     "label": "Assistant name",
+     "type": "text",
+     "default": "Crystal",
+     "help": "Substituted for {name} in the system prompt."
+    },
+    {
+     "key": "llm.systemPrompt",
+     "label": "System prompt",
+     "type": "textarea",
+     "default": "You are {name}, a local assistant that lives inside a glass crystal ball on the user's desktop. Everything you write is read aloud, so answer in short, natural spoken sentences. Do not use markdown, bullet points, emojis, or code blocks unless the user explicitly asks for code. If you do not know something, say so plainly instead of guessing.",
+     "help": "The base instructions. {name} is replaced by the assistant name."
+    }
+   ]
+  },
+  {
+   "id": "voice",
+   "title": "Voice (TTS)",
+   "description": "Every reply is spoken aloud. The voice model is separate from the brain.",
+   "fields": [
+    {
+     "key": "voice.enabled",
+     "label": "Speak replies",
+     "type": "bool",
+     "default": true,
+     "help": "Master switch for spoken output."
+    },
+    {
+     "key": "voice.engine",
+     "label": "Voice engine",
+     "type": "select",
+     "default": "phonon",
+     "help": "phonon = local Gradium Phonon model. system = your OS voices (instant, robotic). off = silent.",
+     "options": [
+      "phonon",
+      "system",
+      "off"
+     ]
+    },
+    {
+     "key": "voice.model",
+     "label": "Phonon model id",
+     "type": "model",
+     "default": "gradium/phonon-40m-en",
+     "help": "Hugging Face model id. Gated + CC BY-NC 4.0 (non-commercial)."
+    },
+    {
+     "key": "voice.device",
+     "label": "Compute device",
+     "type": "select",
+     "default": "auto",
+     "help": "Where Phonon runs.",
+     "options": [
+      "auto",
+      "cpu",
+      "cuda",
+      "mps"
+     ],
+     "apply": "backend-restart"
+    },
+    {
+     "key": "voice.speed",
+     "label": "Speech speed",
+     "type": "number",
+     "default": 1.0,
+     "help": "Implemented by resampling, so it also shifts pitch.",
+     "min": 0.5,
+     "max": 2.0,
+     "step": 0.05,
+     "unit": "x",
+     "slider": true
+    },
+    {
+     "key": "voice.volume",
+     "label": "Volume",
+     "type": "number",
+     "default": 1.0,
+     "help": "Playback gain in the ball window.",
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "voice.sampleRate",
+     "label": "Output sample rate",
+     "type": "number",
+     "default": 24000,
+     "help": "Sample rate of Phonon audio. Change only if the voice sounds too fast/slow.",
+     "min": 8000,
+     "max": 48000,
+     "step": 1000,
+     "unit": "",
+     "slider": false
+    },
+    {
+     "key": "voice.sentenceStreaming",
+     "label": "Speak while thinking",
+     "type": "bool",
+     "default": true,
+     "help": "Starts speaking the first sentence while the brain is still writing the rest."
+    },
+    {
+     "key": "voice.maxChunkChars",
+     "label": "Max characters per spoken chunk",
+     "type": "number",
+     "default": 220,
+     "help": "Long sentences are split to keep latency low.",
+     "min": 60,
+     "max": 800,
+     "step": 10,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "voice.stripMarkdown",
+     "label": "Strip markdown before speaking",
+     "type": "bool",
+     "default": true,
+     "help": "Removes asterisks, headings, links, etc."
+    },
+    {
+     "key": "voice.skipCode",
+     "label": "Skip code blocks when speaking",
+     "type": "bool",
+     "default": true,
+     "help": "Replaces code with 'code omitted' in speech (still shown in the box)."
+    },
+    {
+     "key": "voice.speakToolActivity",
+     "label": "Speak tool activity",
+     "type": "bool",
+     "default": false,
+     "help": "Say things like 'reading file' aloud when the agent uses tools."
+    },
+    {
+     "key": "voice.interruptOnSend",
+     "label": "Stop speaking on new message",
+     "type": "bool",
+     "default": true,
+     "help": "Sending a new query cuts off current speech."
+    },
+    {
+     "key": "voice.preload",
+     "label": "Preload voice model at start",
+     "type": "bool",
+     "default": false,
+     "help": "Loads Phonon at launch (slower start, instant first reply).",
+     "apply": "backend-restart"
+    },
+    {
+     "key": "voice.systemVoice",
+     "label": "System voice name",
+     "type": "text",
+     "default": "",
+     "help": "For engine=system. Blank = OS default. Exact voice name from the OS."
+    },
+    {
+     "key": "voice.hfToken",
+     "label": "Hugging Face token",
+     "type": "password",
+     "default": "",
+     "help": "Needed once for gated models. Stored in plain text in settings.json.",
+     "apply": "backend-restart"
+    }
+   ]
+  },
+  {
+   "id": "appearance",
+   "title": "Crystal ball",
+   "description": "The glass itself. Everything here applies live.",
+   "fields": [
+    {
+     "key": "appearance.ballSize",
+     "label": "Ball diameter",
+     "type": "number",
+     "default": 240,
+     "help": "Size in pixels.",
+     "min": 120,
+     "max": 640,
+     "step": 2,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "appearance.refraction",
+     "label": "Refraction strength",
+     "type": "number",
+     "default": 0.8,
+     "help": "How hard the glass bends what is behind it.",
+     "min": 0,
+     "max": 2.5,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.zoom",
+     "label": "Magnification",
+     "type": "number",
+     "default": 1.0,
+     "help": "Lens zoom at the center.",
+     "min": 0.5,
+     "max": 3,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.ior",
+     "label": "Index of refraction",
+     "type": "number",
+     "default": 1.45,
+     "help": "Glass = 1.5, water = 1.33, diamond = 2.4.",
+     "min": 1.05,
+     "max": 2.2,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.aberration",
+     "label": "Chromatic aberration",
+     "type": "number",
+     "default": 1.0,
+     "help": "Rainbow fringing at the edges.",
+     "min": 0,
+     "max": 4,
+     "step": 0.05,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.blur",
+     "label": "Blur",
+     "type": "number",
+     "default": 0.8,
+     "help": "Base blur of the view through the ball.",
+     "min": 0,
+     "max": 30,
+     "step": 0.5,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "appearance.frost",
+     "label": "Edge frost",
+     "type": "number",
+     "default": 0.2,
+     "help": "Extra blur toward the rim.",
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.tintColor",
+     "label": "Glass tint",
+     "type": "color",
+     "default": "#bfe4ff",
+     "help": "Color cast of the glass."
+    },
+    {
+     "key": "appearance.tintAmount",
+     "label": "Tint amount",
+     "type": "number",
+     "default": 0.06,
+     "help": "",
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.darken",
+     "label": "Darken background",
+     "type": "number",
+     "default": 0.1,
+     "help": "Dims the scene behind the glass. Raise it if the ball looks washed out.",
+     "min": 0,
+     "max": 0.8,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.edgeDarkening",
+     "label": "Edge darkening",
+     "type": "number",
+     "default": 0.35,
+     "help": "Darker glass edge, like a real glass ball. Gives the highlights contrast so the ball does not look white.",
+     "min": 0,
+     "max": 0.9,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.saturation",
+     "label": "Saturation",
+     "type": "number",
+     "default": 1.1,
+     "help": "",
+     "min": 0,
+     "max": 2,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.rim",
+     "label": "Rim light",
+     "type": "number",
+     "default": 0.6,
+     "help": "Fresnel glow around the edge.",
+     "min": 0,
+     "max": 2.5,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.specular",
+     "label": "Specular highlight",
+     "type": "number",
+     "default": 0.7,
+     "help": "The bright reflection of a window light.",
+     "min": 0,
+     "max": 2.5,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.caustic",
+     "label": "Caustic crescent",
+     "type": "number",
+     "default": 0.45,
+     "help": "Focused light on the far side of the glass.",
+     "min": 0,
+     "max": 2.5,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.grain",
+     "label": "Film grain",
+     "type": "number",
+     "default": 0.015,
+     "help": "",
+     "min": 0,
+     "max": 0.2,
+     "step": 0.005,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.wobble",
+     "label": "Wobble / liquid motion",
+     "type": "number",
+     "default": 1.0,
+     "help": "How much the glass ripples when thinking or speaking.",
+     "min": 0,
+     "max": 3,
+     "step": 0.05,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.animSpeed",
+     "label": "Animation speed",
+     "type": "number",
+     "default": 1.0,
+     "help": "",
+     "min": 0.2,
+     "max": 3,
+     "step": 0.05,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.accentColor",
+     "label": "Accent color",
+     "type": "color",
+     "default": "#7fd6c9",
+     "help": "Used for glow while listening, thinking and speaking."
+    },
+    {
+     "key": "appearance.glow",
+     "label": "Outer aura",
+     "type": "number",
+     "default": 0.8,
+     "help": "Halo around the ball when active.",
+     "min": 0,
+     "max": 2.5,
+     "step": 0.05,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.shadow",
+     "label": "Drop shadow",
+     "type": "number",
+     "default": 0.5,
+     "help": "",
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.opacity",
+     "label": "Overall opacity",
+     "type": "number",
+     "default": 1.0,
+     "help": "",
+     "min": 0.2,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "appearance.idleFps",
+     "label": "Idle frame rate",
+     "type": "number",
+     "default": 24,
+     "help": "Render rate when nothing is happening.",
+     "min": 5,
+     "max": 60,
+     "step": 1,
+     "unit": "fps",
+     "slider": true
+    },
+    {
+     "key": "appearance.activeFps",
+     "label": "Active frame rate",
+     "type": "number",
+     "default": 60,
+     "help": "Render rate while thinking/speaking/dragging.",
+     "min": 15,
+     "max": 144,
+     "step": 1,
+     "unit": "fps",
+     "slider": true
+    }
+   ]
+  },
+  {
+   "id": "chat",
+   "title": "Dialogue box",
+   "description": "The borderless box under the ball.",
+   "fields": [
+    {
+     "key": "chat.width",
+     "label": "Width",
+     "type": "number",
+     "default": 440,
+     "help": "",
+     "min": 280,
+     "max": 900,
+     "step": 10,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "chat.height",
+     "label": "Max height",
+     "type": "number",
+     "default": 320,
+     "help": "",
+     "min": 160,
+     "max": 800,
+     "step": 10,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "chat.fontSize",
+     "label": "Font size",
+     "type": "number",
+     "default": 15,
+     "help": "",
+     "min": 11,
+     "max": 24,
+     "step": 1,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "chat.fontFamily",
+     "label": "Font family",
+     "type": "text",
+     "default": "\"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+     "help": ""
+    },
+    {
+     "key": "chat.opacity",
+     "label": "Background darkness",
+     "type": "number",
+     "default": 0.55,
+     "help": "How dark the frosted panel is.",
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "chat.blur",
+     "label": "Backdrop blur",
+     "type": "number",
+     "default": 14,
+     "help": "Frosting of the desktop behind the box.",
+     "min": 0,
+     "max": 40,
+     "step": 1,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "chat.radius",
+     "label": "Corner radius",
+     "type": "number",
+     "default": 22,
+     "help": "",
+     "min": 0,
+     "max": 40,
+     "step": 1,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "chat.textColor",
+     "label": "Reply text color",
+     "type": "color",
+     "default": "#f2f6fa",
+     "help": ""
+    },
+    {
+     "key": "chat.userColor",
+     "label": "Your text color",
+     "type": "color",
+     "default": "#9fb4c8",
+     "help": ""
+    },
+    {
+     "key": "chat.showUserMessages",
+     "label": "Show my messages",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "chat.streamText",
+     "label": "Stream text as it is written",
+     "type": "bool",
+     "default": true,
+     "help": "Off = show the whole reply at once."
+    },
+    {
+     "key": "chat.maxMessages",
+     "label": "Messages kept on screen",
+     "type": "number",
+     "default": 40,
+     "help": "",
+     "min": 4,
+     "max": 200,
+     "step": 1,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "chat.autoHideSeconds",
+     "label": "Auto-hide after reply (0 = never)",
+     "type": "number",
+     "default": 0,
+     "help": "Hides the box this many seconds after speech finishes.",
+     "min": 0,
+     "max": 300,
+     "step": 1,
+     "unit": "s",
+     "slider": true
+    },
+    {
+     "key": "chat.placeholder",
+     "label": "Input placeholder",
+     "type": "text",
+     "default": "Ask anything…",
+     "help": ""
+    }
+   ]
+  },
+  {
+   "id": "behavior",
+   "title": "Behavior & window",
+   "description": "How the app lives on your desktop.",
+   "fields": [
+    {
+     "key": "behavior.hotkey",
+     "label": "Global hotkey",
+     "type": "hotkey",
+     "default": "CommandOrControl+Alt+Space",
+     "help": "Shows the ball and toggles the dialogue box from anywhere."
+    },
+    {
+     "key": "behavior.alwaysOnTop",
+     "label": "Always on top",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "behavior.showInTaskbar",
+     "label": "Show in taskbar",
+     "type": "bool",
+     "default": false,
+     "help": "Off = tray icon only."
+    },
+    {
+     "key": "behavior.startWithSystem",
+     "label": "Start with system",
+     "type": "bool",
+     "default": false,
+     "help": "Launch at login."
+    },
+    {
+     "key": "behavior.startHidden",
+     "label": "Start hidden",
+     "type": "bool",
+     "default": false,
+     "help": "Starts in the tray; use the hotkey to show."
+    },
+    {
+     "key": "behavior.clickThrough",
+     "label": "Click-through transparent areas",
+     "type": "bool",
+     "default": true,
+     "help": "Lets clicks pass through empty parts of the window. Not supported on Linux."
+    },
+    {
+     "key": "behavior.captureScreen",
+     "label": "Refract the real desktop",
+     "type": "bool",
+     "default": true,
+     "help": "Captures the screen behind the ball for the glass effect. Needs screen-capture permission on macOS."
+    },
+    {
+     "key": "behavior.excludeFromCapture",
+     "label": "Hide ball from screen capture",
+     "type": "bool",
+     "default": true,
+     "help": "Required for refraction (otherwise the ball sees itself). Not supported on Linux."
+    },
+    {
+     "key": "behavior.captureFps",
+     "label": "Capture frame rate",
+     "type": "number",
+     "default": 30,
+     "help": "How often the desktop is sampled.",
+     "min": 5,
+     "max": 60,
+     "step": 1,
+     "unit": "fps",
+     "slider": true,
+     "apply": "live"
+    },
+    {
+     "key": "behavior.captureMaxWidth",
+     "label": "Capture max width",
+     "type": "number",
+     "default": 1920,
+     "help": "Lower = lighter on the GPU.",
+     "min": 640,
+     "max": 3840,
+     "step": 64,
+     "unit": "px",
+     "slider": true
+    },
+    {
+     "key": "behavior.rememberPosition",
+     "label": "Remember position",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "behavior.openChatOnStart",
+     "label": "Open dialogue box on start",
+     "type": "bool",
+     "default": false,
+     "help": ""
+    },
+    {
+     "key": "behavior.escClosesChat",
+     "label": "Esc closes dialogue box",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "behavior.closeToTray",
+     "label": "Quit only from tray menu",
+     "type": "bool",
+     "default": true,
+     "help": "Closing windows never quits the app; use tray → Quit."
+    }
+   ]
+  },
+  {
+   "id": "agent",
+   "title": "Agent & folder access",
+   "description": "Lets the model read and (optionally) change files in one folder you choose.",
+   "fields": [
+    {
+     "key": "agent.enabled",
+     "label": "Enable file tools",
+     "type": "bool",
+     "default": true,
+     "help": "If off, the assistant is chat-only."
+    },
+    {
+     "key": "agent.workspace",
+     "label": "Workspace folder",
+     "type": "folder",
+     "default": "",
+     "help": "The ONLY folder the agent can touch. Nothing outside it is reachable."
+    },
+    {
+     "key": "agent.allowRead",
+     "label": "Allow reading",
+     "type": "bool",
+     "default": true,
+     "help": "list_dir, read_file, search_files, grep."
+    },
+    {
+     "key": "agent.allowWrite",
+     "label": "Allow writing",
+     "type": "bool",
+     "default": false,
+     "help": "write_file, make_dir."
+    },
+    {
+     "key": "agent.allowDelete",
+     "label": "Allow deleting",
+     "type": "bool",
+     "default": false,
+     "help": "delete_path (moves nothing to trash — permanent)."
+    },
+    {
+     "key": "agent.confirmWrites",
+     "label": "Ask before write/delete",
+     "type": "bool",
+     "default": true,
+     "help": "Shows Allow/Deny buttons in the dialogue box. Strongly recommended."
+    },
+    {
+     "key": "agent.maxSteps",
+     "label": "Max tool steps per message",
+     "type": "number",
+     "default": 5,
+     "help": "Stops runaway loops.",
+     "min": 1,
+     "max": 20,
+     "step": 1,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "agent.maxReadChars",
+     "label": "Max characters returned per read",
+     "type": "number",
+     "default": 6000,
+     "help": "Larger files are truncated.",
+     "min": 500,
+     "max": 60000,
+     "step": 500,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "agent.maxListEntries",
+     "label": "Max directory entries listed",
+     "type": "number",
+     "default": 200,
+     "help": "",
+     "min": 20,
+     "max": 2000,
+     "step": 10,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "agent.maxSearchResults",
+     "label": "Max search results",
+     "type": "number",
+     "default": 30,
+     "help": "",
+     "min": 5,
+     "max": 200,
+     "step": 5,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "agent.maxFileSizeMB",
+     "label": "Max file size to open",
+     "type": "number",
+     "default": 5,
+     "help": "",
+     "min": 0.1,
+     "max": 100,
+     "step": 0.1,
+     "unit": "MB",
+     "slider": true
+    },
+    {
+     "key": "agent.ignore",
+     "label": "Ignored names",
+     "type": "text",
+     "default": ".git,node_modules,__pycache__,.venv,venv,.DS_Store",
+     "help": "Comma-separated file/folder names hidden from the agent."
+    },
+    {
+     "key": "agent.allowedExtensions",
+     "label": "Allowed extensions",
+     "type": "text",
+     "default": "",
+     "help": "Comma-separated like .txt,.md,.py. Blank = all text-like files."
+    },
+    {
+     "key": "agent.followSymlinks",
+     "label": "Follow symlinks",
+     "type": "bool",
+     "default": false,
+     "help": "Off = links pointing outside the folder are blocked."
+    },
+    {
+     "key": "agent.showToolActivity",
+     "label": "Show tool activity in box",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "agent.extraInstructions",
+     "label": "Extra agent instructions",
+     "type": "textarea",
+     "default": "",
+     "help": "Appended to the tool instructions (project conventions, etc.)."
+    }
+   ]
+  },
+  {
+   "id": "history",
+   "title": "Memory & history",
+   "description": "Conversation storage (SQLite).",
+   "fields": [
+    {
+     "key": "history.enabled",
+     "label": "Save conversations",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "history.resumeLast",
+     "label": "Resume last chat on start",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "history.retentionDays",
+     "label": "Delete chats older than (0 = never)",
+     "type": "number",
+     "default": 0,
+     "help": "",
+     "min": 0,
+     "max": 3650,
+     "step": 1,
+     "unit": "days",
+     "slider": false
+    }
+   ]
+  },
+  {
+   "id": "backend",
+   "title": "Backend process",
+   "description": "The Python server. Most of these need a backend restart.",
+   "fields": [
+    {
+     "key": "backend.pythonPath",
+     "label": "Python executable",
+     "type": "text",
+     "default": "",
+     "help": "Blank = auto-detect (backend/.venv first).",
+     "apply": "backend-restart"
+    },
+    {
+     "key": "backend.port",
+     "label": "Port (0 = automatic)",
+     "type": "number",
+     "default": 0,
+     "help": "",
+     "min": 0,
+     "max": 65535,
+     "step": 1,
+     "unit": "",
+     "slider": false,
+     "apply": "backend-restart"
+    },
+    {
+     "key": "backend.autoRestart",
+     "label": "Auto-restart on crash",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "backend.restartDelay",
+     "label": "Restart delay (s)",
+     "type": "number",
+     "default": 2,
+     "help": "",
+     "min": 1,
+     "max": 60,
+     "step": 1,
+     "unit": "s",
+     "slider": true
+    },
+    {
+     "key": "backend.startTimeout",
+     "label": "Startup timeout (s)",
+     "type": "number",
+     "default": 90,
+     "help": "First start can be slow while Python imports torch.",
+     "min": 10,
+     "max": 600,
+     "step": 5,
+     "unit": "s",
+     "slider": true
+    },
+    {
+     "key": "backend.dataDir",
+     "label": "Data folder override",
+     "type": "text",
+     "default": "",
+     "help": "Where chat_history.db lives. Blank = app data folder.",
+     "apply": "backend-restart"
+    }
+   ]
+  },
+  {
+   "id": "debug",
+   "title": "Debug (temporary)",
+   "description": "Verbose visibility while you develop. Turn these off later.",
+   "fields": [
+    {
+     "key": "debug.showConsoleOnStart",
+     "label": "Open debug console at start",
+     "type": "bool",
+     "default": true,
+     "help": "Shows every log line and error from every process."
+    },
+    {
+     "key": "debug.logLevel",
+     "label": "Console log level",
+     "type": "select",
+     "default": "debug",
+     "help": "Minimum level shown/recorded.",
+     "options": [
+      "debug",
+      "info",
+      "warn",
+      "error"
+     ]
+    },
+    {
+     "key": "debug.logToFile",
+     "label": "Write logs to file",
+     "type": "bool",
+     "default": true,
+     "help": ""
+    },
+    {
+     "key": "debug.maxLogEntries",
+     "label": "Entries kept in memory",
+     "type": "number",
+     "default": 5000,
+     "help": "",
+     "min": 500,
+     "max": 50000,
+     "step": 500,
+     "unit": "",
+     "slider": false
+    },
+    {
+     "key": "debug.errorBadge",
+     "label": "Red error badge on the ball",
+     "type": "bool",
+     "default": true,
+     "help": "A small dot appears on the ball when something errors."
+    },
+    {
+     "key": "debug.logPrompts",
+     "label": "Log full prompts and replies",
+     "type": "bool",
+     "default": true,
+     "help": "Writes exactly what is sent to / received from the model."
+    },
+    {
+     "key": "debug.chatTimings",
+     "label": "Show model + timing under replies",
+     "type": "bool",
+     "default": true,
+     "help": "Tiny grey line like 'phi · 2.4s'."
+    },
+    {
+     "key": "debug.devTools",
+     "label": "Open DevTools for the ball",
+     "type": "bool",
+     "default": false,
+     "help": "Detached Chromium DevTools.",
+     "apply": "app-restart"
+    }
+   ]
+  }
+ ]
+}

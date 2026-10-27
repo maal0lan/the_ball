@@ -1,0 +1,26 @@
+{
+  "name": "crystal-agent",
+  "productName": "Crystal",
+  "version": "0.1.0",
+  "description": "Local AI agent living in a glass crystal ball on your desktop",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "backend": "python backend/server.py --port 8765 --data-dir ./data",
+    "test": "cd backend && python -m pytest ../tests -q",
+    "check": "node --check electron/main.js && node --check electron/preload.js && node --check renderer/ball.js && node --check renderer/settings.js && node --check renderer/console.js",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.local.crystal",
+    "files": ["electron/**", "renderer/**", "assets/**", "package.json"],
+    "extraResources": [
+      { "from": "backend", "to": "backend", "filter": ["**/*", "!.venv/**", "!__pycache__/**"] },
+      { "from": "shared", "to": "shared" }
+    ]
+  }
+}

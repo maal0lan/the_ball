@@ -1,0 +1,56 @@
+:root {
+  --ball: 240px; --margin: 28px; --chat-w: 440px; --chat-h: 320px;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; --fs: 15px;
+  --reply: #f2f6fa; --user: #9fb4c8; --accent: #7fd6c9; --dark: .55; --radius: 22px; --alert: #ff7a7a;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; user-select: none;
+  font-family: var(--font); font-size: var(--fs); color: var(--reply); -webkit-font-smoothing: antialiased; }
+#screenVideo { position: fixed; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+#stage { position: relative; width: 100%; height: 100%; }
+
+/* The glass: canvas is ball + margin on every side, centered at the top */
+#glass { position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: calc(var(--ball) + var(--margin) * 2); height: calc(var(--ball) + var(--margin) * 2); pointer-events: none; }
+#glass.no-gl { background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), rgba(160,210,255,.10) 45%, rgba(20,30,50,.25) 100%);
+  border-radius: 50%; width: var(--ball); height: var(--ball); top: var(--margin); box-shadow: inset 0 0 30px rgba(255,255,255,.35); }
+#ballHit { position: absolute; top: var(--margin); left: 50%; width: var(--ball); height: var(--ball);
+  transform: translateX(-50%); border-radius: 50%; cursor: grab; }
+#ballHit:active { cursor: grabbing; }
+#badge { position: absolute; top: calc(var(--margin) + 6px); left: calc(50% + var(--ball) * .36); width: 14px; height: 14px;
+  border-radius: 50%; background: var(--alert); box-shadow: 0 0 10px var(--alert); cursor: pointer; }
+
+/* Dialogue box: frosted, borderless, no window chrome */
+#panel { position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--ball) + var(--margin) * 2 + 6px);
+  width: var(--chat-w); max-height: var(--chat-h); display: flex; flex-direction: column;
+  border-radius: var(--radius); overflow: hidden; }
+#panelClip { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+#panelBackdrop { position: absolute; left: -24px; top: -24px; width: calc(100% + 48px); height: calc(100% + 48px); }
+#panelTint { position: absolute; inset: 0; background: rgba(12, 17, 24, var(--dark)); }
+#panel > *:not(#panelClip):not(#panelTint) { position: relative; }
+
+#messages { flex: 1 1 auto; overflow-y: auto; padding: 16px 20px 6px; display: flex; flex-direction: column; gap: 10px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px); mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+  user-select: text; scrollbar-width: none; }
+#messages::-webkit-scrollbar { display: none; }
+.msg { line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.user { color: var(--user); text-align: right; }
+.msg.assistant { color: var(--reply); }
+.msg.tool { color: var(--accent); font-size: .85em; opacity: .85; font-style: italic; }
+.msg.error { color: var(--alert); font-size: .9em; }
+.msg .meta { display: block; margin-top: 3px; font-size: .72em; color: var(--user); opacity: .6; }
+#notice { padding: 2px 20px 4px; font-size: .8em; color: var(--user); }
+#notice.bad { color: var(--alert); }
+#confirm { margin: 4px 14px 6px; padding: 9px 12px; border-radius: 14px; background: rgba(255,255,255,.09);
+  display: flex; gap: 8px; align-items: center; font-size: .88em; }
+#confirm[hidden], #notice[hidden], #panel[hidden], #badge[hidden], #stopBtn[hidden] { display: none; }
+#confirmText { flex: 1; overflow-wrap: anywhere; }
+button { font: inherit; color: inherit; border: 0; border-radius: 10px; padding: 5px 12px; cursor: pointer; background: rgba(255,255,255,.12); }
+button:hover { background: rgba(255,255,255,.2); }
+#allowBtn { background: var(--accent); color: #07211d; font-weight: 600; }
+#composer { display: flex; gap: 8px; padding: 6px 14px 14px; }
+#input { flex: 1; min-width: 0; font: inherit; color: var(--reply); background: rgba(255,255,255,.09); border: 0; outline: 0;
+  border-radius: 999px; padding: 10px 16px; user-select: text; }
+#input:focus { background: rgba(255,255,255,.14); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+#input::placeholder { color: var(--user); opacity: .7; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
