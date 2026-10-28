@@ -140,6 +140,21 @@ def test_memory_history_skill(tmp_path):
     assert history.get_sessions() == []
 
 
+def test_backend_status_skill():
+    tools.load_skills()
+    r = tools.execute("backend_status", {})
+    assert r["ok"]
+    for needle in ("Uptime:", "Ollama:", "Tiers:", "TTS:", "Workspace:", "History DB:", "Installed models:"):
+        assert needle in r["result"], needle
+
+
+def test_backend_restart_guarded():
+    tools.load_skills()
+    r = tools.execute("backend_restart", {})
+    assert not r["ok"] and "Refusing" in r["error"]
+    # with confirm='yes' it would exit the process — never call that in a test
+
+
 # ------------------------------------------------------------------ commands & skills
 import sys as _sys
 
