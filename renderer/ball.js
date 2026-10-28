@@ -58,7 +58,8 @@ async function startCapture() {
     console.info(`Screen capture started: display ${info.display.id}, ${el.video.videoWidth}x${el.video.videoHeight}`);
   } catch (e) {
     capture.has = false;
-    console.error(`Screen capture failed: ${e.message}. The ball falls back to plain glass. (macOS: grant Screen Recording permission.)`);
+    // Ignore AbortError from stopCapture race; treat as transient and retry on next user action
+    if (e.name !== 'AbortError') console.error(`Screen capture failed: ${e.message}. The ball falls back to plain glass. (macOS: grant Screen Recording permission.)`);
   }
 }
 function stopCapture() {
@@ -414,11 +415,12 @@ async function toggleSpeechRecognition() {
   if (speechStopping || !S['voice.inputEnabled']) return;
   if (turn.active || speaker.busy) { addMsg('tool', 'Voice input is unavailable while Crystal is responding.'); return; }
   if (!speechInput) speechInput = new LocalSpeechInput(text => {
-    if (!speechInput.transcribeOnStop) return;
     el.input.value = [el.input.value.trim(), text].filter(Boolean).join(' ');
     el.input.dispatchEvent(new Event('input', { bubbles: true }));
     el.input.focus();
-  }, error => addMsg('error', `Local speech transcription failed: ${error.message}`), () => setListening(false, true));
+    setListening(false);
+  }, error => { setListening(false); addMsg('error', `Local speech transcription failed: ${error.message}`); },
+  () => setListening(false, true));
   speechInput.language = S['voice.inputLanguage'] || 'en-US';
   try {
     await speechInput.start();

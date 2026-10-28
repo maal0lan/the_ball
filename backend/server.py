@@ -50,6 +50,8 @@ async def lifespan(app: FastAPI):
     history.init_db(DATA_DIR)
     history.prune(int(settings.get("history.retentionDays")))
     tools.load_skills()
+    if settings.get("voice.engine") == "phonon" and settings.get("voice.preload"):
+        threading.Thread(target=phonon.preload, daemon=True).start()
     log.info("Backend up. Python %s", sys.version.split()[0])
     yield
     await ollama.close()

@@ -141,6 +141,16 @@ class PhononTTS:
             samples = np.interp(np.linspace(0, samples.size - 1, n), np.arange(samples.size), samples).astype(np.float32)
         return samples_to_wav(samples, int(settings.get("voice.sampleRate")))
 
+    def preload(self) -> None:
+        """Load the model and run one tiny synthesis so the first real reply is fast."""
+        import time
+        try:
+            t0 = time.time()
+            self._synth("Ready.")          # _synth loads the model itself
+            log.info("Phonon preloaded and warmed up in %.1fs", time.time() - t0)
+        except Exception:
+            log.exception("Phonon preload failed")
+    
     async def synthesize(self, text: str) -> bytes:
         return await asyncio.to_thread(self._synth, text)
 

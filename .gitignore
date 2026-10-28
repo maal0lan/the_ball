@@ -9,3 +9,6 @@ data/
 dist/
 out/
 .pytest_cache/
+
+
+git_diff/
