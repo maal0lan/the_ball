@@ -31,6 +31,7 @@ function applyLayout() {
   r.setProperty('--dark', S['chat.opacity']);
   r.setProperty('--radius', S['chat.radius'] + 'px');
   el.input.placeholder = S['chat.placeholder'];
+  renderPickers();
   resizeGL();
 }
 
@@ -368,6 +369,19 @@ function sendChat(text) {
   turn.active = true; turn.msgEl = null; turn.text = ''; turn.buffered = '';
   ws.send(JSON.stringify({ type: 'chat', text, session_id: sessionId }));
   el.stop.hidden = false;
+}
+
+// ---- provider + effort chips (glass UI). Selection is stored in settings so the backend sees it live.
+function renderPickers() {
+let list = []; try { list = JSON.parse(S['llm.providers'] || '[]'); } catch {}
+const provs = [{ id: 'ollama', name: 'Ollama' }, ...list.filter(p => p && p.enabled !== false && p.baseUrl)];
+const cur = provs.some(p => p.id === S['llm.provider']) ? S['llm.provider'] : 'ollama';
+const mk = (box, items, active, onPick) => { box.textContent = ''; for (const [id, label] of items) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip' + (id === active ? ' on' : ''); b.textContent = label;
+  b.onclick = () => onPick(id); box.append(b); } };
+mk($('provChips'), provs.map(p => [p.id, p.name]), cur, id => crystal.settings.set({ 'llm.provider': id }));
+mk($('effortChips'), [['auto', 'Auto'], ['fast', 'Low'], ['mid', 'Medium'], ['heavy', 'High']], S['llm.mode'], id => crystal.settings.set({ 'llm.mode': id }));
+$('provChips').hidden = provs.length < 2;
 }
 
 el.form.addEventListener('submit', e => { e.preventDefault(); const t = el.input.value; el.input.value = ''; sendChat(t); });

@@ -16,6 +16,9 @@ const IS_LINUX = process.platform === 'linux';
 
 let store, backend, tray;
 let ballWin = null, settingsWin = null, consoleWin = null;
+// Resolves once the ball is really visible and hidden from screen capture.
+let ballShownResolve;
+const ballShown = new Promise(r => { ballShownResolve = r; });
 let quitting = false, dragStart = null, lastDisplayId = null, moveTimer = null;
 
 // ---------------------------------------------------------------- crash visibility
@@ -80,11 +83,29 @@ function createBall() {
   applyBallFlags();
   ballWin.loadFile(path.join(APP_ROOT, 'renderer', 'ball.html'));
   ballWin.once('ready-to-show', () => { if (!S('behavior.startHidden')) ballWin.showInactive(); });
+  ballWin.once('show', settleGlass);
+  ballWin.on('show', () => { if (ballWin && !ballWin.isDestroyed()) ballWin.setContentProtection(!!S('behavior.excludeFromCapture')); });
   ballWin.on('move', onBallMove);
   ballWin.on('close', e => { if (!quitting) { e.preventDefault(); ballWin.hide(); } });
   if (S('debug.devTools')) ballWin.webContents.openDevTools({ mode: 'detach' });
   lastDisplayId = screen.getDisplayMatching(ballWin.getBounds()).id;
   log.info('main', `ball window created ${w}x${h} at ${x},${y}`);
+}
+
+function settleGlass() {
+  applyBallFlags();
+  setTimeout(() => {
+    applyBallFlags();
+    ballShownResolve();
+    log.info('main', 'glass ready: window visible and hidden from screen capture');
+    if (ballWin && !ballWin.isDestroyed()) ballWin.webContents.send('capture:display-changed');
+  }, 500);
+}
+
+function resetGlass() {
+  log.info('main', 'Reset glass requested');
+  applyBallFlags();
+  if (ballWin && !ballWin.isDestroyed()) ballWin.webContents.send('capture:display-changed');
 }
 
 function applyBallFlags() {
@@ -172,6 +193,7 @@ function trayTemplate() {
     { type: 'separator' },
     { label: 'Settings…', click: () => openSingleton('settings') },
     { label: 'Debug console', click: () => openSingleton('console') },
+    { label: 'Reset glass (fixes a white ball)', click: resetGlass },
     { label: 'Restart backend', click: () => backend.restart() },
     { type: 'separator' },
     { label: 'Quit Crystal', click: () => { quitting = true; app.quit(); } },
@@ -253,6 +275,7 @@ function setupIpc() {
   ipcMain.handle('app:open-console', () => { openSingleton('console'); });
 
   ipcMain.handle('capture:info', async () => {
+    await Promise.race([ballShown, new Promise(r => setTimeout(r, 5000))]);
     const b = ballWin.getBounds();
     const disp = screen.getDisplayMatching(b);
     lastDisplayId = disp.id;

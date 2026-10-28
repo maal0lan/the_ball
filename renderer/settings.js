@@ -57,9 +57,42 @@ function control(f, onChange) {
       };
       return [t, h('span', { class: 'restart' }, 'click the box and press the keys')];
     }
+    case 'providers': return [providerEditor(v, onChange)];
     case 'password': { const t = h('input', { type: 'password', value: v }); t.onchange = () => onChange(t.value, true); return [t]; }
     default: { const t = h('input', { type: 'text', value: v }); t.onchange = () => onChange(t.value, true); return [t]; }
   }
+}
+
+function providerEditor(json, onChange) {
+  let list; try { list = JSON.parse(json || '[]'); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  const box = h('div', { class: 'prov' });
+  const save = imm => onChange(JSON.stringify(list), imm);
+  const inp = (p, key, ph, type = 'text', sub) => {
+    const i = h('input', { type, placeholder: ph, value: (sub ? (p[sub] || {})[key] : p[key]) || '' });
+    i.onchange = () => { if (sub) { p[sub] = p[sub] || {}; p[sub][key] = i.value.trim(); } else p[key] = i.value.trim(); save(true); };
+    return i;
+  };
+  const draw = () => {
+    box.textContent = '';
+    for (const p of list) {
+      const out = h('small', { class: 'restart' }, '');
+      const on = h('input', { type: 'checkbox' }); on.checked = p.enabled !== false; on.onchange = () => { p.enabled = on.checked; save(true); };
+      box.append(h('div', { class: 'provcard' },
+        h('div', { class: 'ctl' }, h('label', { class: 'sw' }, on, h('span')), inp(p, 'name', 'Name (e.g. OpenRouter)'),
+          h('button', { class: 'b', type: 'button', onclick: () => { if (confirm(`Delete provider “${p.name || p.id}”?`)) { list = list.filter(x => x !== p); save(true); draw(); } } }, 'Delete')),
+        h('div', { class: 'ctl' }, inp(p, 'baseUrl', 'API link, e.g. https://openrouter.ai/api/v1'), inp(p, 'apiKey', 'API key', 'password')),
+        h('div', { class: 'ctl' }, inp(p, 'fast', 'Low model', 'text', 'models'), inp(p, 'mid', 'Medium model', 'text', 'models'), inp(p, 'heavy', 'High model', 'text', 'models')),
+        h('div', { class: 'ctl' }, h('button', { class: 'b', type: 'button', onclick: async () => {
+          out.textContent = 'Testing…'; const r = await crystal.backend.api('POST', '/api/test/provider', { id: p.id, tier: 'fast' }); const d = r.data || {};
+          out.textContent = d.ok ? `OK (${d.model}): ${d.reply}` : `Failed: ${d.error || JSON.stringify(r)}`;
+        } }, 'Test low model'), out)));
+    }
+    box.append(h('button', { class: 'b pri', type: 'button', onclick: () => {
+      list.push({ id: 'p' + Date.now().toString(36), name: 'New provider', baseUrl: '', apiKey: '', enabled: true, models: { fast: '', mid: '', heavy: '' } }); save(true); draw();
+    } }, '+ Add provider'),
+    h('div', { class: 'restart' }, 'Any OpenAI-compatible endpoint works (OpenRouter, Groq, Together, OpenAI, LM Studio, …). Keys are stored in plain text in settings.json.'));
+  };
+  draw(); return box;
 }
 
 function fieldRow(f) {
