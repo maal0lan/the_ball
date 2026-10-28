@@ -247,16 +247,30 @@
   },
   {
    "id": "voice",
-   "title": "Voice (TTS)",
-   "description": "Every reply is spoken aloud. The voice model is separate from the brain.",
-   "fields": [
-    {
-     "key": "voice.enabled",
-     "label": "Speak replies",
-     "type": "bool",
-     "default": true,
-     "help": "Master switch for spoken output."
-    },
+   "title": "Voice (input & output)",
+   "description": "Optional speech input and spoken replies. The voice model is separate from the brain.",
+    "fields": [
+     {
+      "key": "voice.inputEnabled",
+      "label": "Enable voice input",
+      "type": "bool",
+      "default": false,
+      "help": "Show the microphone button. Speech recognition uses Chromium's built-in speech service."
+     },
+     {
+      "key": "voice.inputLanguage",
+      "label": "Speech input language",
+      "type": "text",
+      "default": "en-US",
+      "help": "BCP 47 language tag used for speech recognition (for example, en-US or fr-FR)."
+     },
+     {
+      "key": "voice.enabled",
+      "label": "Speak replies",
+      "type": "bool",
+      "default": true,
+      "help": "Master switch for spoken output."
+     },
     {
      "key": "voice.engine",
      "label": "Voice engine",

@@ -1,6 +1,6 @@
 'use strict';
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, globalShortcut, dialog, desktopCapturer,
-        shell, nativeImage, systemPreferences } = require('electron');
+        shell, nativeImage, systemPreferences, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const log = require('./logger');
@@ -240,6 +240,14 @@ function applySettings(changed) {
 
 // ---------------------------------------------------------------- IPC
 function setupIpc() {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const types = details.mediaTypes || [];
+    const audioOnly = types.length > 0 && types.every(type => type === 'audio');
+    const videoOnly = types.length > 0 && types.every(type => type === 'video');
+    const fromBall = ballWin && !ballWin.isDestroyed() && webContents === ballWin.webContents && details.requestingUrl === webContents.getURL();
+    const allowed = fromBall && (audioOnly && S('voice.inputEnabled') || videoOnly && S('behavior.captureScreen'));
+    callback(permission === 'media' && !!allowed);
+  });
   ipcMain.handle('settings:schema', () => store.schema);
   ipcMain.handle('settings:all', () => store.all());
   ipcMain.handle('settings:set', (_e, patch) => { const c = store.set(patch); if (c.length) applySettings(c); return c; });

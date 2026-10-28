@@ -126,6 +126,7 @@ Tray icon → **Settings… → Agent & folder access → Workspace folder → B
 |---|---|
 | Open/close the dialogue box | **Click** the ball, or the global hotkey (default `Ctrl/Cmd+Alt+Space`) |
 | Send | Type, **Enter** |
+| Speak a message | Enable Settings → Voice → *Enable voice input*, click **Mic**, then review/edit the transcript in the input before pressing Enter |
 | Recall previous messages | ↑ / ↓ in the input |
 | Stop talking / stop generating | **Esc** (while busy) or the **Stop** button. Esc again closes the box |
 | Move the ball | **Drag** it (a click without movement opens the box). Position is remembered |
@@ -315,6 +316,7 @@ SQLite (`chat_history.db` in the app-data folder). Sessions + messages (+ which 
 
 ## 8. Deep dive: the voice
 
+* **Voice input.** Enable *Settings → Voice → Enable voice input*, then click **Mic** in the dialogue box. Chromium speech recognition fills the composer for review; it never submits automatically. The input language is configurable, recognition stops before TTS playback, and service availability/privacy behavior depends on the Chromium build and platform.
 * **Sentence streaming.** `SentenceSplitter` cuts on `. ! ? …` and newlines; overlong runs are split at commas/spaces near `voice.maxChunkChars`. Each sentence is synthesised in a worker thread (`asyncio.to_thread`) and sent as a base64 WAV `audio` event. Order is guaranteed by a single worker + queue on the server and a promise chain in the renderer.
 * **What gets spoken.** `clean_for_speech`: code blocks → "code omitted", markdown marks removed, links → their text, bare URLs → "link", emoji removed. Controlled by `voice.stripMarkdown`, `voice.skipCode`. The text box still shows the original.
 * **Engines.** `phonon` (local model), `system` (the server sends `speak` events; the renderer uses the OS `speechSynthesis`), `off`.
@@ -592,10 +594,10 @@ Then Settings → Tools → *List / reload skills*. Built-ins live at the bottom
 Tiers are just names in the schema (`llm.model.fast/mid/heavy`). To add `llm.model.vision` or a 4th tier: add the setting, add the option to `llm.mode`, extend `pick_model`.
 
 ### 14.5 Add speech-to-text (the missing input half)
-* Renderer: `getUserMedia({audio:true})` + `MediaRecorder`, push-to-talk on the ball (hold) or a hotkey.
-* Backend: new WS message `audio` (base64 webm/pcm) → `faster-whisper` (`WhisperModel("tiny.en", compute_type="int8")`) → text → call `agent.run_turn(...)` exactly like a typed message.
-* Add settings: `stt.enabled`, `stt.model`, `stt.language`, `stt.pushToTalkKey`.
-* Later: VAD (Silero) for auto-stop; wake word (openWakeWord).
+* The dialogue box microphone button uses Chromium's built-in `SpeechRecognition` API; it is enabled via Voice → Enable voice input and uses Voice → Speech input language.
+* Recognition is started only by a user click, transcribed text is placed in the composer (never auto-sent), and listening stops when Crystal starts responding or the chat closes to avoid TTS feedback.
+* Speech recognition availability and service behavior depend on the Chromium build and operating system. No speech model or backend audio endpoint is required.
+* A later local alternative could use `getUserMedia({audio:true})` + `MediaRecorder` and a backend recognizer such as faster-whisper, with push-to-talk or VAD.
 
 ### 14.6 Re-add MCP tools
 Write a small async MCP client using the official `mcp` Python SDK (stdio transport), list tools at startup, and expose them through the same `<tool>` protocol with a `server.tool` naming scheme. Reuse `needs_confirmation`.
@@ -695,7 +697,7 @@ Self-test notes: it draws a test pattern behind the ball, injects it as the "des
 1. **Tested only on Linux/Xvfb.** The window creation, shader, backend supervision, WebSocket chat, settings window and debug console were run for real; refraction was verified with a synthetic desktop image. Windows/macOS-specific features — capture exclusion, real desktop capture, click-through, tray, hotkey, login item — follow Electron's documented behaviour but were **not run** on those platforms.
 2. **Phonon TTS code is carried over, not re-verified.** The `AutoProcessor`/`AutoModelForTextToWaveform` calls come unchanged from your original `main.py`; no GPU, model download or Phonon-enabled Transformers build was available to execute them. If TTS fails, the real error appears in the console and in the box.
 3. **Model tags** (`LiquidAI/lfm2.5-350m:latest`, `phi`, `mistral`) were not checked against Ollama's registry (§2.3).
-4. **No speech-to-text.** Input is typed (as requested). The old mic stub was removed.
+4. **Speech recognition depends on Chromium/platform support and an available speech service.** Voice input is off by default and only listens after the user presses Mic; recognition is stopped while Crystal responds to avoid capturing TTS.
 5. Speed control also changes pitch; TTS isn't truly streamed within a sentence.
 6. Small models make tool-format mistakes; the retry path helps but isn't magic.
 7. `getUserMedia` with `chromeMediaSource: 'desktop'` is Electron's long-standing capture route; if a future Electron removes it, switch to `setDisplayMediaRequestHandler` + `getDisplayMedia` (change confined to `startCapture()` and `capture:info`).
@@ -708,7 +710,7 @@ Self-test notes: it draws a test pattern behind the ball, injects it as the "des
 
 ## 20. Roadmap (suggested order)
 
-1. Speech-to-text + push-to-talk (§14.5) — completes "voice in".
+1. Push-to-talk and local speech recognition (§14.5) — an alternative to the built-in Chromium speech service.
 2. History browser in the dialogue box or settings.
 3. True streaming TTS / pitch-preserving speed.
 4. MCP tools (§14.6).
@@ -722,7 +724,7 @@ Self-test notes: it draws a test pattern behind the ball, injects it as the "des
 
 ## 21. Settings reference
 
-Generated from `shared/settings-schema.json` (135 settings). Keys are what you use in code (`settings.get("llm.temperature")`).
+Generated from `shared/settings-schema.json` (139 settings). Keys are what you use in code (`settings.get("llm.temperature")`).
 
 
 ### Brain (LLM)
@@ -754,12 +756,14 @@ Which local language model answers you, and how it generates text. Models come f
 | `llm.assistantName` | Assistant name | text | `Crystal` |  | Substituted for {name} in the system prompt. |
 | `llm.systemPrompt` | System prompt | textarea | `You are {name}, a local assistant tha…` |  | The base instructions. {name} is replaced by the assistant name. |
 
-### Voice (TTS)
+### Voice (input & output)
 
-Every reply is spoken aloud. The voice model is separate from the brain.
+Replies can be spoken aloud, and optional voice input uses Chromium speech recognition. Press Mic to transcribe into the composer without sending; the voice model is separate from the brain.
 
 | Key | Label | Type | Default | Range / options | Notes |
 |---|---|---|---|---|---|
+| `voice.inputEnabled` | Enable voice input | bool | `false` |  | Show the microphone button. Speech recognition uses Chromium's built-in speech service. |
+| `voice.inputLanguage` | Speech input language | text | `en-US` |  | BCP 47 language tag used for speech recognition (for example, en-US or fr-FR). |
 | `voice.enabled` | Speak replies | bool | `true` |  | Master switch for spoken output. |
 | `voice.engine` | Voice engine | select | `phonon` | phonon / system / off | phonon = local Gradium Phonon model. system = your OS voices (instant, robotic). off = silent. |
 | `voice.model` | Phonon model id | model | `gradium/phonon-40m-en` |  | Hugging Face model id. Gated + CC BY-NC 4.0 (non-commercial). |
