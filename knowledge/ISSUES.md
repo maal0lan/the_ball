@@ -1,6 +1,6 @@
 # Skill issues / gaps
 
-Recorded 2026-10-28 while auditing `backend/skills/`.
+Recorded 2026-10-28 while auditing `backend/skills/`. Last updated 2026-10-28.
 
 ## Skills that exist (no issue)
 
@@ -19,9 +19,19 @@ present in `backend/skills/`:
 | `tools_diagnostics.py` | ✅ exists |
 | `_template.py` | ✅ exists (template, not loaded) |
 
-## Missing skills
+## Missing skills — CLOSED
 
 None found. Every skill the docs and tests expect is implemented.
+**Status: cleared — closed 2026-10-28.** No GitHub issue filed (sandbox denies external
+writes); recorded here instead.
+
+## Bugs fixed this session (2026-10-28)
+
+| Fix | File | What changed |
+|-----|------|--------------|
+| `settings_read` section matching | `backend/skills/settings_read.py` | Section ids (e.g. `brain`) never matched flat keys (`llm.mode`). Now derives the per-section key prefix from `shared/settings-schema.json`. |
+| `misc` tools gated by `agent.enabled` | `backend/tools.py` | `enabled_tools()` now always includes `misc`-perm tools (they need no workspace / no switch), so `settings_read` works even with file tools off. |
+| Per-tool allow/deny/ask policy | `backend/tools.py` + `shared/settings-schema.json` | Added `_tool_policy()` reading `agent.tool.<name>` (allow/deny/ask, default allow). Deny skips the tool; `ask` forces confirmation. |
 
 ## Future skills (tracked here, not filed as GitHub issues — sandbox denies external writes)
 

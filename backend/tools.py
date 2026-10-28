@@ -51,15 +51,23 @@ def workspace_root() -> Path | None:
     return p.resolve() if p.is_dir() else None
 
 
+def _tool_policy(name: str) -> str:
+    """Return the per-tool policy: 'allow', 'deny', or 'ask'."""
+    return str(settings.get(f"agent.tool.{name}", "allow")).strip().lower()
+
+
 def enabled_tools() -> list[str]:
     has_ws = workspace_root() is not None
     off = settings.csv("agent.skillsDisabled")
     out = []
     for name, t in REGISTRY.items():
+        policy = _tool_policy(name)
+        if policy == "deny":
+            continue
         if t["source"] != "builtin" and (not settings.get("agent.skillsEnabled") or name in off):
             continue
         if t["perm"] == "misc":
-            # Harmless, needs no workspace and no switch — always available.
+            # Harmless, needs no workspace and no switch — always available (subject to policy).
             out.append(name)
             continue
         if not settings.get("agent.enabled"):
@@ -76,6 +84,8 @@ def enabled_tools() -> list[str]:
 def needs_confirmation(tool: str) -> bool:
     t = REGISTRY.get(tool)
     if not t:
+        return True
+    if _tool_policy(tool) == "ask":
         return True
     return bool({"write": settings.get("agent.confirmWrites"), "delete": settings.get("agent.confirmWrites"),
                  "exec": settings.get("agent.confirmExec"), "net": settings.get("agent.confirmNet")}.get(t["perm"], False))

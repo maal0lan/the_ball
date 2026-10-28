@@ -1055,6 +1055,306 @@
      "help": "Comma-separated tool names to switch off (e.g. get_time,system_info)."
     },
     {
+     "key": "agent.tool.list_dir",
+     "label": "list_dir",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "List directory contents (read tool)."
+    },
+    {
+     "key": "agent.tool.read_file",
+     "label": "read_file",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Read a text file (read tool)."
+    },
+    {
+     "key": "agent.tool.search_files",
+     "label": "search_files",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Search file names (read tool)."
+    },
+    {
+     "key": "agent.tool.grep",
+     "label": "grep",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Search text inside files (read tool)."
+    },
+    {
+     "key": "agent.tool.write_file",
+     "label": "write_file",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Create/overwrite/append a file (write tool). Still gated by agent.allowWrite."
+    },
+    {
+     "key": "agent.tool.make_dir",
+     "label": "make_dir",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Create a folder (write tool). Still gated by agent.allowWrite."
+    },
+    {
+     "key": "agent.tool.delete_path",
+     "label": "delete_path",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Permanently delete a file or folder (delete tool). Still gated by agent.allowDelete."
+    },
+    {
+     "key": "agent.tool.run_command",
+     "label": "run_command",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Run one program inside the workspace (exec tool). Still gated by agent.allowExec."
+    },
+    {
+     "key": "agent.tool.fetch_url",
+     "label": "fetch_url",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Read a web page as text (net skill)."
+    },
+    {
+     "key": "agent.tool.get_time",
+     "label": "get_time",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Current local date and time (misc skill)."
+    },
+    {
+     "key": "agent.tool.system_info",
+     "label": "system_info",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "OS, CPU cores, free disk space (misc skill)."
+    },
+    {
+     "key": "agent.tool.settings_read",
+     "label": "settings_read",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Read-only settings dump (misc skill)."
+    },
+    {
+     "key": "agent.tool.history_list_sessions",
+     "label": "history_list_sessions",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "List recent chat sessions (misc skill)."
+    },
+    {
+     "key": "agent.tool.history_read_session",
+     "label": "history_read_session",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Read one session's messages (misc skill)."
+    },
+    {
+     "key": "agent.tool.history_latest_session",
+     "label": "history_latest_session",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Id of the most recent chat session (misc skill)."
+    },
+    {
+     "key": "agent.tool.history_prune",
+     "label": "history_prune",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Delete sessions older than N days (misc skill)."
+    },
+    {
+     "key": "agent.tool.history_delete_session",
+     "label": "history_delete_session",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Permanently delete one chat session (misc skill)."
+    },
+    {
+     "key": "agent.tool.backend_status",
+     "label": "backend_status",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Backend process status (misc skill)."
+    },
+    {
+     "key": "agent.tool.backend_restart",
+     "label": "backend_restart",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Restart the backend process (misc skill)."
+    },
+    {
+     "key": "agent.tool.debug_test_llm",
+     "label": "debug_test_llm",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Test one brain tier (debug skill)."
+    },
+    {
+     "key": "agent.tool.debug_test_tts",
+     "label": "debug_test_tts",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Test TTS synthesis (debug skill)."
+    },
+    {
+     "key": "agent.tool.debug_test_workspace",
+     "label": "debug_test_workspace",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Check the workspace folder (debug skill)."
+    },
+    {
+     "key": "agent.tool.tools_list_skills",
+     "label": "tools_list_skills",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "List every registered tool (diagnostics skill)."
+    },
+    {
+     "key": "agent.tool.tools_reload_skills",
+     "label": "tools_reload_skills",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Reload all skill files (diagnostics skill)."
+    },
+    {
+     "key": "agent.tool.models_refresh",
+     "label": "models_refresh",
+     "type": "select",
+     "default": "allow",
+     "options": [
+      "allow",
+      "deny",
+      "ask"
+     ],
+     "help": "Refresh the Ollama model list (diagnostics skill)."
+    },
+    {
      "key": "agent.confirmWrites",
      "label": "Ask before write/delete",
      "type": "bool",
