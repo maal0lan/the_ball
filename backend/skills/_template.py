@@ -2,8 +2,6 @@
 SKILL TEMPLATE — copy this file, rename it (no leading underscore), edit, then use
 Settings → Tools & diagnostics → "Reload skills". Files starting with "_" are never loaded.
 
-Knowledge doc: ../knowledge/skills/_template.md
-
 A skill file only needs a  register(register_tool)  function. Call register_tool once per tool:
 
   name       the name the model writes:  <tool>{"name": "<name>", "args": {...}}</tool>
@@ -14,6 +12,8 @@ A skill file only needs a  register(register_tool)  function. Call register_tool
                - write/delete/exec/net ask for Allow/Deny first by default
   fn         your function. Receives the model's args as keyword arguments, returns a short STRING.
              Raise ToolError("clear message") to refuse or fail politely.
+  confirm    optional, default False: True = ALWAYS ask Allow/Deny first, whatever the perm. Use it for anything that
+             deletes, restarts, sends, spends, or changes settings — even if you filed it under "misc".
   describe   optional: args -> sentence shown in the UI / confirmation card (make it specific!)
 
 Rules of thumb: return small outputs (the model has a small context); never trust the arguments;

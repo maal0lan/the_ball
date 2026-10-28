@@ -14,7 +14,16 @@ async def chat(body: dict):
     if body["model"] == "missing": return StreamingResponse(iter([b""]), status_code=404)
     saw_result = any("<tool_result>" in m["content"] for m in msgs)
     first_user = [m["content"] for m in msgs if m["role"] == "user"][0] if body["model"] != "x" else ""
-    if saw_result:
+    last_user = [m["content"] for m in msgs if m["role"] == "user"][-1]
+    if "invalid or incomplete" in last_user:      # retry after a cut-off call: now answer correctly
+        text = '<tool>{"name":"write_file","args":{"path":"long.md","content":"ok after retry"}}</tool>'
+    elif "create a long file" in msgs[-1]["content"]:
+        text = '<tool>{"name": "write_file", "args": {"path": "long.md", "content": "this got cut off by the token lim'
+    elif "create a file" in msgs[-1]["content"] and not saw_result:
+        text = 'Sure!\n```plaintext\n[tool] [name]: {"name": "write_file", "args": {"path": "notes/hello.txt", "content": "Hello\nfrom Mistral"}}\n```'
+    elif saw_result and "Wrote" in last_user:
+        text = "Done, I saved the file."
+    elif saw_result:
         last = [m["content"] for m in msgs if m["role"] == "user"][-1]
         text = "The command said hello-from-echo." if "hello-from-echo" in last else ("I could not run it." if "ERROR" in last else "I read it. The note says hello world. It also has a secret plan.")
     elif "run echo" in msgs[-1]["content"]:
@@ -78,6 +87,21 @@ async def main():
             print(f"allow={allow} -> {reply!r}")
             assert saw_confirm and "echo hello-from-echo" in saw_confirm
             assert ("hello-from-echo" in reply) == allow
+        # Mistral-style broken format + cut-off call -> file must really be created
+        httpx.post("http://127.0.0.1:8799/api/settings", headers=H, json={"agent.allowWrite": True})
+        for prompt, expect in (("create a file hello please", "notes/hello.txt"), ("create a long file please", "long.md")):
+            await ws.send(json.dumps({"type": "chat", "session_id": "s", "text": prompt}))
+            shown, infos = "", []
+            while True:
+                m = json.loads(await asyncio.wait_for(ws.recv(), 15))
+                if m["type"] == "confirm": print("confirm card:", m["description"]); await ws.send(json.dumps({"type": "confirm_response", "id": m["id"], "allow": True}))
+                elif m["type"] == "token": shown += m["text"]
+                elif m["type"] == "info": infos.append(m["message"][:60])
+                elif m["type"] == "done": break
+            print(f"{prompt!r}: shown={shown!r} infos={infos}")
+            assert Path(ws_dir, expect).exists(), f"{expect} was NOT created"
+            assert "[tool]" not in shown and "```" not in shown and "write_file" not in shown, "raw tool call leaked into chat"
+        print("file on disk:", repr(Path(ws_dir, "notes/hello.txt").read_text()), "|", repr(Path(ws_dir, "long.md").read_text()))
         # missing model error path
         r = httpx.post("http://127.0.0.1:8799/api/settings", headers=H, json={"llm.model.heavy": "missing"})
         await ws.send(json.dumps({"type": "chat", "session_id": "s", "text": "hi"}))
