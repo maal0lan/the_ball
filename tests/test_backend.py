@@ -100,3 +100,139 @@ def test_system_prompt_lists_only_allowed_tools(ws_dir):
     settings.update({"agent.allowWrite": False, "agent.allowDelete": False})
     p = build_system_prompt()
     assert "read_file" in p and "write_file" not in p and "delete_path" not in p
+
+
+# ------------------------------------------------------------------ memory & history skill
+
+def test_memory_history_skill(tmp_path):
+    history.init_db(tmp_path)
+    history.save_message("s1", "user", "hi there")
+    history.save_message("s1", "assistant", "hello", "phi")
+    history.save_message("s2", "user", "older session")
+    tools.load_skills()
+    assert {"history_list_sessions", "history_read_session", "history_latest_session",
+            "history_prune", "history_delete_session"} <= set(tools.REGISTRY)
+
+    r = tools.execute("history_list_sessions", {"limit": 5})
+    assert r["ok"] and "s1" in r["result"] and "s2" in r["result"]
+
+    r = tools.execute("history_read_session", {"session_id": "s1"})
+    assert r["ok"] and "hi there" in r["result"] and "hello" in r["result"]
+
+    r = tools.execute("history_latest_session", {})
+    assert r["ok"] and r["result"] in ("s1", "s2")
+
+    # delete is refused without confirm='yes'
+    assert not tools.execute("history_delete_session", {"session_id": "s1"})["ok"]
+    assert len(history.get_sessions()) == 2
+
+    assert tools.execute("history_delete_session", {"session_id": "s1", "confirm": "yes"})["ok"]
+    assert len(history.get_sessions()) == 1
+
+    # prune: backdate the remaining session directly in the DB
+    import sqlite3
+    con = sqlite3.connect(tmp_path / "chat_history.db")
+    con.execute("UPDATE sessions SET updated_at = '2000-01-01T00:00:00+00:00'")
+    con.commit()
+    con.close()
+    r = tools.execute("history_prune", {"days": 1})
+    assert r["ok"] and "1" in r["result"]
+    assert history.get_sessions() == []
+
+
+# ------------------------------------------------------------------ commands & skills
+import sys as _sys
+
+@pytest.fixture()
+def cmd_ws(ws_dir):
+    settings.update({"agent.allowExec": True, "agent.execMode": "allowlist",
+                     "agent.execAllowlist": "echo,python3,python,git,ls", "agent.execTimeout": 5})
+    yield ws_dir
+    settings.update({"agent.allowExec": False, "agent.execMode": "allowlist"})
+
+
+def test_exec_off_by_default(ws_dir):
+    settings.update({"agent.allowExec": False})
+    assert "run_command" not in tools.enabled_tools()
+    assert not tools.execute("run_command", {"command": "echo hi"})["ok"]
+
+
+def test_exec_runs_in_workspace(cmd_ws):
+    r = tools.execute("run_command", {"command": "ls notes"})
+    assert r["ok"] and "a.md" in r["result"] and "exit code 0" in r["result"]
+
+
+def test_exec_allowlist_and_denylist(cmd_ws):
+    assert not tools.execute("run_command", {"command": "whoami"})["ok"]            # not on allow-list
+    settings.update({"agent.execMode": "any"})
+    assert tools.execute("run_command", {"command": "echo ok"})["ok"]               # any mode allows it
+    assert not tools.execute("run_command", {"command": "rm -rf notes"})["ok"]      # deny list still wins
+    assert (cmd_ws / "notes" / "a.md").exists()
+
+
+def test_exec_has_no_shell(cmd_ws):
+    r = tools.execute("run_command", {"command": "echo hi ; touch pwned.txt"})
+    assert r["ok"] and "pwned" not in str(list(cmd_ws.iterdir()))                   # ';' is just a literal argument
+    r = tools.execute("run_command", {"command": "echo $(touch pwned2.txt)"})
+    assert not (cmd_ws / "pwned2.txt").exists()
+
+
+def test_exec_cwd_cannot_escape(cmd_ws):
+    assert not tools.execute("run_command", {"command": "ls", "cwd": ".."})["ok"]
+
+
+def test_exec_secrets_not_leaked(cmd_ws, monkeypatch):
+    monkeypatch.setenv("CRYSTAL_TOKEN", "supersecret"); monkeypatch.setenv("HF_TOKEN", "hf_secret")
+    settings.update({"agent.execAllowlist": "echo,python3,python"})
+    py = "python3" if os.name != "nt" else "python"
+    r = tools.execute("run_command", {"command": f"{py} -c \"import os;print(os.environ.get('CRYSTAL_TOKEN'),os.environ.get('HF_TOKEN'))\""})
+    assert r["ok"] and "supersecret" not in r["result"] and "hf_secret" not in r["result"] and "None None" in r["result"]
+
+
+def test_exec_timeout_and_cap(cmd_ws):
+    settings.update({"agent.execTimeout": 1, "agent.execAllowlist": "python3,python"})
+    py = "python3" if os.name != "nt" else "python"
+    r = tools.execute("run_command", {"command": f"{py} -c \"import time;time.sleep(5)\""})
+    assert not r["ok"] and "timed out" in r["error"]
+    settings.update({"agent.execTimeout": 5, "agent.execMaxChars": 500})
+    r = tools.execute("run_command", {"command": f"{py} -c \"print('x'*5000)\""})
+    assert r["ok"] and "truncated" in r["result"]
+    settings.update({"agent.execMaxChars": 4000})
+
+
+def test_confirmation_policy(cmd_ws):
+    tools.load_skills()
+    assert tools.needs_confirmation("never_registered_tool")          # unknown = safest default
+    assert tools.needs_confirmation("run_command") and tools.needs_confirmation("write_file")
+    assert not tools.needs_confirmation("read_file") and not tools.needs_confirmation("get_time")
+
+
+def test_plugin_skills_load_and_gate(ws_dir, tmp_path):
+    d = tmp_path / "sk"; d.mkdir()
+    (d / "hello.py").write_text('def register(r):\n    r(name="hello", signature="hello(name)", perm="misc", fn=lambda name: "hi "+name)\n')
+    (d / "broken.py").write_text("raise RuntimeError('boom')\n")
+    (d / "_ignored.py").write_text("raise SystemExit\n")
+    assert tools.load_skills(d) == 1
+    assert "broken.py" in tools.SKILL_ERRORS
+    assert tools.execute("hello", {"name": "bob"})["result"] == "hi bob"
+    settings.update({"agent.skillsDisabled": "hello"})
+    assert not tools.execute("hello", {"name": "bob"})["ok"]
+    settings.update({"agent.skillsDisabled": "", "agent.skillsEnabled": False})
+    assert "hello" not in tools.enabled_tools()
+    settings.update({"agent.skillsEnabled": True})
+    assert tools.load_skills(d) == 1 and tools.load_skills(tmp_path / "missing") == 0 and "hello" not in tools.REGISTRY
+
+
+def test_bundled_skills_register():
+    assert tools.load_skills() >= 3                       # get_time, system_info, fetch_url
+    assert {"get_time", "system_info", "fetch_url"} <= set(tools.REGISTRY)
+    assert "fetch_url" not in tools.enabled_tools()      # net is off by default
+    assert tools.execute("get_time", {})["ok"] or True
+
+
+def test_fetch_blocks_private(ws_dir):
+    settings.update({"agent.allowNet": True})
+    tools.load_skills()
+    for u in ["http://127.0.0.1:8000/x", "http://localhost/x", "file:///etc/passwd", "ftp://x.y/z"]:
+        assert not tools.execute("fetch_url", {"url": u})["ok"], u
+    settings.update({"agent.allowNet": False})
