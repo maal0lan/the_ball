@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('crystal', {
   backend: {
     info: () => invoke('backend:info'),
     api: (method, path, body) => invoke('backend:api', { method, path, body }),
+    transcribe: (pcm, language) => invoke('backend:transcribe', pcm, language),
     restart: () => invoke('backend:restart'),
     onState: cb => on('backend:state', cb),
   },

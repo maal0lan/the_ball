@@ -265,6 +265,12 @@ function setupIpc() {
 
   ipcMain.handle('backend:info', () => backend.info());
   ipcMain.handle('backend:api', (_e, { method, path: p, body }) => backend.request(method, p, body));
+  ipcMain.handle('backend:transcribe', (_e, pcm, language) => {
+    if (!S('voice.inputEnabled') || !(Buffer.isBuffer(pcm) || pcm instanceof Uint8Array || pcm instanceof ArrayBuffer) || pcm.byteLength > 480_000) {
+      throw new Error('Voice input is disabled or the audio clip is invalid.');
+    }
+    return backend.transcribe(Buffer.from(pcm), String(language || 'en-US'));
+  });
   ipcMain.handle('backend:restart', () => backend.restart());
 
   ipcMain.on('win:ignore-mouse', (_e, ignore) => {

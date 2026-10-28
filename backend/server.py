@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import os
 import sys
 import time
@@ -179,6 +180,34 @@ async def test_tts(body: dict):
     except Exception as e:
         log.exception("test_tts")
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@app.post("/api/stt", dependencies=[Depends(auth)])
+async def speech_to_text(request: Request):
+    language = request.headers.get("x-speech-language", "en-US")[:32]
+    if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language):
+        raise HTTPException(400, "Invalid speech language tag")
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > 480_000:
+            raise HTTPException(413, "Voice clip cannot exceed 15 seconds.")
+        chunks.append(chunk)
+    pcm = b"".join(chunks)
+    if not 2 <= len(pcm) <= 480_000 or len(pcm) % 2:
+        raise HTTPException(400, "Voice clip must be between 1 sample and 15 seconds.")
+    try:
+        import stt
+        text = await asyncio.to_thread(stt.transcribe_pcm16, pcm, language)
+        return {"text": text}
+    except Exception as exc:
+        log.exception("Local speech transcription failed")
+        if isinstance(exc, (OSError, ValueError)):
+            detail = f"{type(exc).__name__}: {exc}"
+        else:
+            detail = f"{type(exc).__name__}. Check that the local Whisper model can be downloaded and loaded."
+        raise HTTPException(503, f"Local speech transcription failed: {detail}") from exc
 
 
 @app.post("/api/test/workspace", dependencies=[Depends(auth)])
