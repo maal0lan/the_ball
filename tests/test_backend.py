@@ -155,6 +155,35 @@ def test_backend_restart_guarded():
     # with confirm='yes' it would exit the process — never call that in a test
 
 
+# ------------------------------------------------------------------ debug (temporary) skill
+
+def test_debug_test_llm_reports():
+    tools.load_skills()
+    r = tools.execute("debug_test_llm", {"tier": "fast"})
+    assert r["ok"]
+    assert r["result"].startswith("fast (") and ("OK" in r["result"] or "FAILED" in r["result"])
+
+
+def test_debug_test_tts_reports():
+    tools.load_skills()
+    r = tools.execute("debug_test_tts", {"text": "hello"})
+    assert r["ok"]
+    assert r["result"].startswith("TTS:") and any(s in r["result"] for s in ("OK", "FAILED", "skipped"))
+
+
+def test_debug_test_workspace_no_workspace(tmp_path):
+    settings.update({"agent.workspace": "", "agent.enabled": True})
+    tools.load_skills()
+    r = tools.execute("debug_test_workspace", {})
+    assert r["ok"] and r["result"].startswith("Workspace: FAILED — no workspace folder set")
+
+
+def test_debug_test_workspace_ok(ws_dir):
+    tools.load_skills()
+    r = tools.execute("debug_test_workspace", {})
+    assert r["ok"] and r["result"].startswith("Workspace: OK") and str(ws_dir) in r["result"]
+
+
 # ------------------------------------------------------------------ commands & skills
 import sys as _sys
 
