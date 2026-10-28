@@ -30,3 +30,7 @@ button.rst { background: none; border: 0; color: var(--mute); cursor: pointer; f
 .restart { color: #e8c35a; font-size: 12px; }
 #toolsOut { white-space: pre-wrap; background: #080c11; border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; min-height: 140px; margin-top: 14px; max-width: 880px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.prov { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.provcard { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.05); display: flex; flex-direction: column; gap: 8px; }
+.provcard input[type=text], .provcard input[type=password] { flex: 1; min-width: 0; }

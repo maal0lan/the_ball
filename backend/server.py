@@ -31,7 +31,7 @@ log = logging.getLogger("backend.server")
 import agent
 import history
 import tools
-from llm import LLMError, ollama, pick_model
+from llm import LLMError, ollama
 from tts import phonon
 
 TOKEN = os.getenv("CRYSTAL_TOKEN", "")
@@ -135,6 +135,16 @@ async def session_messages(sid: str, limit: int | None = None):
 async def del_session(sid: str):
     history.delete_session(sid)
     return {"deleted": sid}
+
+
+@app.post("/api/test/provider", dependencies=[Depends(auth)])
+async def test_provider(body: dict):
+    import providers
+    want = str(body.get("id") or "")
+    p = next((x for x in providers.all_providers() if x.id == want), None)
+    if not p:
+        return {"ok": False, "error": "Provider not found or disabled. Enable it and save first."}
+    return await providers.test(p, str(body.get("tier") or "fast"))
 
 
 @app.post("/api/test/llm", dependencies=[Depends(auth)])

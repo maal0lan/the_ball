@@ -48,6 +48,12 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 button { font: inherit; color: inherit; border: 0; border-radius: 10px; padding: 5px 12px; cursor: pointer; background: rgba(255,255,255,.12); }
 button:hover { background: rgba(255,255,255,.2); }
 #allowBtn { background: var(--accent); color: #07211d; font-weight: 600; }
+#pickers { display: flex; flex-direction: column; gap: 6px; padding: 4px 14px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 11px; font-size: .78em; border-radius: 999px; color: var(--user); background: rgba(255,255,255,.08);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.chip.on { color: #07211d; background: var(--accent); font-weight: 600; box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent); }
+#pickers[hidden] { display: none; }
 #composer { display: flex; gap: 8px; padding: 6px 14px 14px; }
 #input { flex: 1; min-width: 0; font: inherit; color: var(--reply); background: rgba(255,255,255,.09); border: 0; outline: 0;
   border-radius: 999px; padding: 10px 16px; user-select: text; }

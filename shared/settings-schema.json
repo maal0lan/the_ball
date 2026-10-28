@@ -225,6 +225,27 @@
    ]
   },
   {
+   "id": "providers",
+   "title": "Providers",
+   "description": "Choose where the brain runs. Ollama is built in; add any OpenAI-compatible cloud endpoint below.",
+   "fields": [
+    {
+     "key": "llm.provider",
+     "label": "Active provider",
+     "type": "text",
+     "default": "ollama",
+     "help": "Id of the provider used for replies. Normally set from the dialogue box."
+    },
+    {
+     "key": "llm.providers",
+     "label": "Custom providers",
+     "type": "providers",
+     "default": "[]",
+     "help": "Stored as JSON. Each provider needs an API link, a key and a model name per effort."
+    }
+   ]
+  },
+  {
    "id": "voice",
    "title": "Voice (TTS)",
    "description": "Every reply is spoken aloud. The voice model is separate from the brain.",

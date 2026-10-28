@@ -15,7 +15,8 @@ from typing import Awaitable, Callable
 import history
 import tools
 from config import settings
-from llm import LLMError, ollama, pick_model
+from llm import LLMError, pick_tier
+import providers
 from tts import SentenceSplitter, clean_for_speech, phonon
 
 log = logging.getLogger("backend.agent")
@@ -263,9 +264,11 @@ async def run_turn(session_id: str, text: str, emit: Emit,
                    confirm: Callable[[str, str], Awaitable[bool]]) -> None:
     t_start = time.time()
     tool_list = tools.enabled_tools()
-    tier, model = pick_model(text, bool(tool_list))
-    log.info("Turn: tier=%s model=%s tools=%s", tier, model, tool_list or "none")
-    await emit({"type": "turn_start", "tier": tier, "model": model})
+    tier = pick_tier(text, bool(tool_list))
+    prov = providers.active()
+    model = prov.model(tier)
+    log.info("Turn: provider=%s tier=%s model=%s tools=%s", prov.name, tier, model, tool_list or "none")
+    await emit({"type": "turn_start", "tier": tier, "model": model, "provider": prov.name})
 
     if settings.get("history.enabled"):
         history.save_message(session_id, "user", text)
@@ -283,7 +286,7 @@ async def run_turn(session_id: str, text: str, emit: Emit,
         for step in range(int(settings.get("agent.maxSteps")) + 1):
             filt = ToolStreamFilter()
             raw = ""
-            async for tok in ollama.chat_stream(model, messages, tool_budget):
+            async for tok in providers.chat_stream(prov, model, messages, tool_budget):
                 raw += tok
                 vis = filt.feed(tok)
                 if vis:

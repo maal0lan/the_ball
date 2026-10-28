@@ -98,20 +98,23 @@ class OllamaClient:
 ollama = OllamaClient()
 
 
-def pick_model(text: str, tools_active: bool) -> tuple[str, str]:
-    """Return (tier, model_name) according to llm.mode and the auto rules."""
+def pick_tier(text: str, tools_active: bool) -> str:
+    """Return fast, mid, or heavy according to llm.mode and the auto rules."""
     mode = str(settings.get("llm.mode"))
-    if mode == "auto":
-        words = len(text.split())
-        lower = text.lower()
-        if tools_active and any(k in lower for k in settings.csv("llm.autoHeavyKeywords")):
-            tier = "heavy"
-        elif words >= int(settings.get("llm.autoHeavyWords")):
-            tier = "heavy"
-        elif words >= int(settings.get("llm.autoMidWords")):
-            tier = "mid"
-        else:
-            tier = "fast"
-    else:
-        tier = mode
+    if mode in ("fast", "mid", "heavy"):
+        return mode
+    words = len(text.split())
+    lower = text.lower()
+    if tools_active and any(k in lower for k in settings.csv("llm.autoHeavyKeywords")):
+        return "heavy"
+    if words >= int(settings.get("llm.autoHeavyWords")):
+        return "heavy"
+    if words >= int(settings.get("llm.autoMidWords")):
+        return "mid"
+    return "fast"
+
+
+def pick_model(text: str, tools_active: bool) -> tuple[str, str]:
+    """Ollama-only compatibility helper."""
+    tier = pick_tier(text, tools_active)
     return tier, str(settings.get(f"llm.model.{tier}"))
