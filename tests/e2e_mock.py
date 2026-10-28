@@ -13,8 +13,14 @@ async def chat(body: dict):
     msgs = body["messages"]
     if body["model"] == "missing": return StreamingResponse(iter([b""]), status_code=404)
     saw_result = any("<tool_result>" in m["content"] for m in msgs)
-    text = ("I read it. The note says hello world. It also has a secret plan." if saw_result else
-            'Sure, checking. <tool>{"name":"read_file","args":{"path":"a.md"}}</tool>')
+    first_user = [m["content"] for m in msgs if m["role"] == "user"][0] if body["model"] != "x" else ""
+    if saw_result:
+        last = [m["content"] for m in msgs if m["role"] == "user"][-1]
+        text = "The command said hello-from-echo." if "hello-from-echo" in last else ("I could not run it." if "ERROR" in last else "I read it. The note says hello world. It also has a secret plan.")
+    elif "run echo" in msgs[-1]["content"]:
+        text = 'Running it. <tool>{"name":"run_command","args":{"command":"echo hello-from-echo"}}</tool>'
+    else:
+        text = 'Sure, checking. <tool>{"name":"read_file","args":{"path":"a.md"}}</tool>'
     async def gen():
         for i in range(0, len(text), 7):
             yield (json.dumps({"message": {"content": text[i:i+7]}, "done": False}) + "\n").encode()
@@ -56,6 +62,22 @@ async def main():
             elif m["type"] == "done": print("done:", m["model"], m["seconds"]); break
         print("shown :", shown); print("spoken:", spoken)
         assert "<tool>" not in shown and "hello world" in shown and spoken
+        # run_command: confirmation flow (deny, then allow)
+        httpx.post("http://127.0.0.1:8799/api/settings", headers=H, json={"agent.allowExec": True, "agent.execAllowlist": "echo", "llm.model.heavy": "phi"})
+        for allow in (False, True):
+            await ws.send(json.dumps({"type": "chat", "session_id": "s", "text": "please run echo"}))
+            saw_confirm, reply = None, ""
+            while True:
+                m = json.loads(await asyncio.wait_for(ws.recv(), 15))
+                if m["type"] == "confirm":
+                    saw_confirm = m["description"]; print("confirm card:", saw_confirm)
+                    await ws.send(json.dumps({"type": "confirm_response", "id": m["id"], "allow": allow}))
+                elif m["type"] == "token": reply += m["text"]
+                elif m["type"] == "tool_result": print("tool_result ok =", m["ok"])
+                elif m["type"] == "done": break
+            print(f"allow={allow} -> {reply!r}")
+            assert saw_confirm and "echo hello-from-echo" in saw_confirm
+            assert ("hello-from-echo" in reply) == allow
         # missing model error path
         r = httpx.post("http://127.0.0.1:8799/api/settings", headers=H, json={"llm.model.heavy": "missing"})
         await ws.send(json.dumps({"type": "chat", "session_id": "s", "text": "hi"}))

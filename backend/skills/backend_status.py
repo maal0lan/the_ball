@@ -5,6 +5,8 @@ history DB; plus a restart switch.
 `backend_status` is read-only. `backend_restart` exits the Python process so the Electron
 supervisor (backend.js) restarts it — same as a crash restart. It refuses unless you pass
 confirm='yes'.
+
+Knowledge doc: ../knowledge/skills/backend_status.md
 """
 import asyncio
 import logging

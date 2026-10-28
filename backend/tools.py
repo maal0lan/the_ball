@@ -3,30 +3,44 @@ Sandboxed file tools for the agent. EVERY path is resolved and must stay inside
 the workspace folder chosen in Settings. Returns plain dicts; never raises to the caller.
 """
 import fnmatch
+import importlib.util
 import logging
 import os
+import shlex
+import subprocess
 from pathlib import Path
+from typing import Callable
 
 from config import settings
 
 log = logging.getLogger("backend.tools")
 
-TOOL_SIGNATURES = {
-    "list_dir": 'list_dir(path=".")',
-    "read_file": "read_file(path)",
-    "search_files": "search_files(pattern)   # file-name glob such as *.md",
-    "grep": 'grep(text, path=".")   # find text inside files',
-    "write_file": "write_file(path, content, append=false)",
-    "make_dir": "make_dir(path)",
-    "delete_path": "delete_path(path)",
-}
-READ_TOOLS = {"list_dir", "read_file", "search_files", "grep"}
-WRITE_TOOLS = {"write_file", "make_dir"}
-DELETE_TOOLS = {"delete_path"}
+# ---------------------------------------------------------------- registry
+# Every tool (built-in or plugin skill) is one entry here. `perm` decides which setting
+# gates it and whether it needs a confirmation click:
+#   read / write / delete / exec  -> need a workspace folder (commands run inside it)
+#   net                           -> network access, off by default
+#   misc                          -> harmless, no workspace needed (e.g. get_time)
+PERM_SETTING = {"read": "agent.allowRead", "write": "agent.allowWrite", "delete": "agent.allowDelete",
+                "exec": "agent.allowExec", "net": "agent.allowNet", "misc": None}
+NEEDS_WORKSPACE = {"read", "write", "delete", "exec"}
+REGISTRY: dict[str, dict] = {}
+SKILL_ERRORS: dict[str, str] = {}
 
 
 class ToolError(Exception):
-    pass
+    """A tool refused or failed in a way the model/user should be told about."""
+
+
+def register(name: str, signature: str, perm: str, fn: Callable, describe: Callable[[dict], str] | None = None,
+             source: str = "builtin") -> None:
+    if perm not in PERM_SETTING:
+        raise ValueError(f"unknown permission '{perm}' (use one of {sorted(PERM_SETTING)})")
+    REGISTRY[name] = {"name": name, "sig": signature, "perm": perm, "fn": fn, "describe": describe, "source": source}
+
+
+def signature(name: str) -> str:
+    return REGISTRY[name]["sig"]
 
 
 def workspace_root() -> Path | None:
@@ -38,20 +52,71 @@ def workspace_root() -> Path | None:
 
 
 def enabled_tools() -> list[str]:
-    if not settings.get("agent.enabled") or workspace_root() is None:
-        return []
-    out: list[str] = []
-    if settings.get("agent.allowRead"):
-        out += sorted(READ_TOOLS, key=list(TOOL_SIGNATURES).index)
-    if settings.get("agent.allowWrite"):
-        out += sorted(WRITE_TOOLS, key=list(TOOL_SIGNATURES).index)
-    if settings.get("agent.allowDelete"):
-        out += sorted(DELETE_TOOLS, key=list(TOOL_SIGNATURES).index)
+    has_ws = workspace_root() is not None
+    off = settings.csv("agent.skillsDisabled")
+    out = []
+    for name, t in REGISTRY.items():
+        if t["source"] != "builtin" and (not settings.get("agent.skillsEnabled") or name in off):
+            continue
+        if t["perm"] == "misc":
+            # Harmless, needs no workspace and no switch — always available.
+            out.append(name)
+            continue
+        if not settings.get("agent.enabled"):
+            continue
+        if t["perm"] in NEEDS_WORKSPACE and not has_ws:
+            continue
+        key = PERM_SETTING[t["perm"]]
+        if key and not settings.get(key):
+            continue
+        out.append(name)
     return out
 
 
 def needs_confirmation(tool: str) -> bool:
-    return bool(settings.get("agent.confirmWrites")) and tool in (WRITE_TOOLS | DELETE_TOOLS)
+    t = REGISTRY.get(tool)
+    if not t:
+        return True
+    return bool({"write": settings.get("agent.confirmWrites"), "delete": settings.get("agent.confirmWrites"),
+                 "exec": settings.get("agent.confirmExec"), "net": settings.get("agent.confirmNet")}.get(t["perm"], False))
+
+
+def list_skills() -> list[dict]:
+    on = set(enabled_tools())
+    return [{"name": n, "perm": t["perm"], "source": t["source"], "signature": t["sig"], "active": n in on}
+            for n, t in REGISTRY.items()] + [{"name": k, "error": v} for k, v in SKILL_ERRORS.items()]
+
+
+# ---------------------------------------------------------------- plugin skills
+def skills_dir() -> Path:
+    return Path(os.getenv("CRYSTAL_SKILLS_DIR") or Path(__file__).resolve().parent / "skills")
+
+
+def load_skills(directory: Path | None = None) -> int:
+    """(Re)load every skills/*.py. A file may define  register(register_tool)  — see skills/_template.py."""
+    for n in [n for n, t in REGISTRY.items() if t["source"] != "builtin"]:
+        del REGISTRY[n]
+    SKILL_ERRORS.clear()
+    d = directory or skills_dir()
+    if not d.is_dir():
+        return 0
+    count = 0
+    for f in sorted(d.glob("*.py")):
+        if f.name.startswith("_"):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(f"crystal_skill_{f.stem}", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            before = len(REGISTRY)
+            mod.register(lambda **kw: register(source=f"skills/{f.name}", **kw))
+            count += len(REGISTRY) - before
+            log.info("Loaded skill file %s", f.name)
+        except Exception as e:
+            SKILL_ERRORS[f.name] = f"{type(e).__name__}: {e}"
+            log.exception("Skill file %s failed to load", f.name)
+    log.info("Skills loaded: %d tool(s) from %s", count, d)
+    return count
 
 
 def _ignored(name: str) -> bool:
@@ -104,26 +169,22 @@ def _read_text(p: Path) -> str:
 
 def describe(tool: str, args: dict) -> str:
     """Short human sentence for the UI / confirmation card."""
-    a = args or {}
-    return {
-        "list_dir": f"Listing {a.get('path', '.')}",
-        "read_file": f"Reading {a.get('path', '?')}",
-        "search_files": f"Searching names for {a.get('pattern', '?')}",
-        "grep": f"Searching text for “{a.get('text', '?')}”",
-        "write_file": f"{'Appending to' if a.get('append') else 'Writing'} {a.get('path', '?')} ({len(str(a.get('content', '')))} chars)",
-        "make_dir": f"Creating folder {a.get('path', '?')}",
-        "delete_path": f"DELETING {a.get('path', '?')}",
-    }.get(tool, tool)
+    t = REGISTRY.get(tool)
+    try:
+        if t and t["describe"]:
+            return t["describe"](args or {})
+    except Exception:
+        pass
+    return f"{tool} {args}" if args else tool
 
 
 def execute(tool: str, args: dict) -> dict:
     try:
         if tool not in enabled_tools():
             raise ToolError(f"Tool '{tool}' is not available (disabled in Settings → Agent).")
-        fn = globals()[f"_t_{tool}"]
-        result = fn(**(args or {}))
+        result = REGISTRY[tool]["fn"](**(args or {}))
         log.info("tool %s ok", tool)
-        return {"ok": True, "result": result}
+        return {"ok": True, "result": result if isinstance(result, str) else str(result)}
     except ToolError as e:
         log.warning("tool %s refused: %s", tool, e)
         return {"ok": False, "error": str(e)}
@@ -228,3 +289,72 @@ def _t_delete_path(path: str) -> str:
     else:
         raise ToolError(f"'{path}' does not exist.")
     return f"Deleted {path}"
+
+
+# ---------------------------------------------------------------- run_command
+# Windows cmd built-ins have no .exe, so they must be run through cmd /c
+_CMD_BUILTINS = {"dir", "type", "echo", "ver", "where"}
+_SECRET_ENV = ("CRYSTAL_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")
+
+
+def _exe_name(token: str) -> str:
+    n = Path(token).name.lower()
+    return n[:-4] if n.endswith(".exe") else n
+
+
+def _t_run_command(command: str, cwd: str = ".") -> str:
+    command = str(command).strip()
+    if not command:
+        raise ToolError("Empty command.")
+    workdir = _safe(cwd)
+    if not workdir.is_dir():
+        raise ToolError(f"'{cwd}' is not a folder.")
+    try:
+        parts = shlex.split(command, posix=(os.name != "nt"))
+    except ValueError as e:
+        raise ToolError(f"Could not parse the command: {e}")
+    if not parts:
+        raise ToolError("Empty command.")
+    exe = _exe_name(parts[0])
+    if exe in {x.lower() for x in settings.csv("agent.execDenylist")}:
+        raise ToolError(f"'{exe}' is on the deny list (Settings → Agent).")
+    if settings.get("agent.execMode") == "allowlist" and exe not in {x.lower() for x in settings.csv("agent.execAllowlist")}:
+        raise ToolError(f"'{exe}' is not on the allowed-commands list (Settings → Agent → Allowed commands).")
+    # No shell is ever used, so  ;  &&  |  >  $(...)  have no special meaning and cannot chain extra commands.
+    argv = ["cmd", "/c", *parts] if os.name == "nt" and exe in _CMD_BUILTINS else parts
+    env = {k: v for k, v in os.environ.items() if k not in _SECRET_ENV}   # never leak our tokens to child processes
+    timeout = float(settings.get("agent.execTimeout"))
+    cap = int(settings.get("agent.execMaxChars"))
+    try:
+        p = subprocess.run(argv, cwd=workdir, env=env, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout, stdin=subprocess.DEVNULL,
+                           creationflags=0x08000000 if os.name == "nt" else 0)
+    except FileNotFoundError:
+        raise ToolError(f"Command not found: {parts[0]}")
+    except subprocess.TimeoutExpired as e:
+        partial = ((e.stdout or b"") if isinstance(e.stdout, bytes) else (e.stdout or "")) or ""
+        raise ToolError(f"Command timed out after {timeout:g}s and was stopped. Output so far: {str(partial)[:cap]}")
+    out = (p.stdout or "").strip()
+    err = (p.stderr or "").strip()
+    text = f"exit code {p.returncode}"
+    if out:
+        text += f"\n[stdout]\n{out}"
+    if err:
+        text += f"\n[stderr]\n{err}"
+    return text[:cap] + (f"\n…[output truncated at {cap} characters]" if len(text) > cap else "")
+
+
+# ---------------------------------------------------------------- built-in registrations
+_a = lambda a, k, d="?": a.get(k, d)
+register("list_dir", 'list_dir(path=".")', "read", _t_list_dir, lambda a: f"Listing {_a(a, 'path', '.')}")
+register("read_file", "read_file(path)", "read", _t_read_file, lambda a: f"Reading {_a(a, 'path')}")
+register("search_files", "search_files(pattern)   # file-name glob such as *.md", "read", _t_search_files,
+         lambda a: f"Searching names for {_a(a, 'pattern')}")
+register("grep", 'grep(text, path=".")   # find text inside files', "read", _t_grep,
+         lambda a: f"Searching text for “{_a(a, 'text')}”")
+register("write_file", "write_file(path, content, append=false)", "write", _t_write_file,
+         lambda a: f"{'Appending to' if a.get('append') else 'Writing'} {_a(a, 'path')} ({len(str(a.get('content', '')))} chars)")
+register("make_dir", "make_dir(path)", "write", _t_make_dir, lambda a: f"Creating folder {_a(a, 'path')}")
+register("delete_path", "delete_path(path)", "delete", _t_delete_path, lambda a: f"DELETING {_a(a, 'path')}")
+register("run_command", 'run_command(command, cwd=".")   # runs one program with arguments, no pipes or &&',
+         "exec", _t_run_command, lambda a: f"RUN COMMAND: {_a(a, 'command')}  (in {_a(a, 'cwd', '.')})")

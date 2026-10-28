@@ -4,6 +4,8 @@ Memory & history: list chat sessions, read a session's messages, prune/delete se
 Reads the SQLite chat history the backend already keeps (backend/history.py). No workspace
 folder is needed — the history DB lives in the app data folder. Destructive calls (prune,
 delete) refuse unless you pass confirm='yes'.
+
+Knowledge doc: ../knowledge/skills/memory_history.md
 """
 import os
 from pathlib import Path

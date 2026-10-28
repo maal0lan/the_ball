@@ -184,6 +184,50 @@ def test_debug_test_workspace_ok(ws_dir):
     assert r["ok"] and r["result"].startswith("Workspace: OK") and str(ws_dir) in r["result"]
 
 
+# ------------------------------------------------------------------ tools & diagnostics skill
+
+def test_tools_list_skills_skill():
+    tools.load_skills()
+    r = tools.execute("tools_list_skills", {})
+    assert r["ok"]
+    for needle in ("get_time", "system_info", "fetch_url", "[misc", "[net", "●", "○"):
+        assert needle in r["result"], needle
+
+
+def test_tools_reload_skills_skill():
+    tools.load_skills()
+    r = tools.execute("tools_reload_skills", {})
+    assert r["ok"] and "Reloaded skills:" in r["result"]
+
+
+def test_models_refresh_reports():
+    tools.load_skills()
+    r = tools.execute("models_refresh", {})
+    assert r["ok"]
+    assert r["result"].startswith("No Ollama models found") or "model(s)" in r["result"]
+
+
+# ------------------------------------------------------------------ settings read skill
+
+def test_settings_read_skill():
+    tools.load_skills()
+    r = tools.execute("settings_read", {"section": "brain"})
+    assert r["ok"]
+    for key in ("llm.mode", "llm.model.fast", "llm.model.mid", "llm.model.heavy"):
+        assert key in r["result"], key
+    # no workspace needed and no permission gate
+    settings.update({"agent.enabled": False})
+    assert tools.execute("settings_read", {"section": "brain"})["ok"]
+
+
+def test_settings_read_all_and_empty():
+    tools.load_skills()
+    r = tools.execute("settings_read", {"section": ""})
+    assert r["ok"] and "llm.mode" in r["result"]
+    r = tools.execute("settings_read", {"section": "nope_such_section"})
+    assert r["ok"] and "No settings found" in r["result"]
+
+
 # ------------------------------------------------------------------ commands & skills
 import sys as _sys
 

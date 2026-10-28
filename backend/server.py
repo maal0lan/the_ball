@@ -48,6 +48,7 @@ def auth(request: Request) -> None:
 async def lifespan(app: FastAPI):
     history.init_db(DATA_DIR)
     history.prune(int(settings.get("history.retentionDays")))
+    tools.load_skills()
     log.info("Backend up. Python %s", sys.version.split()[0])
     yield
     await ollama.close()
@@ -106,6 +107,17 @@ async def set_settings(patch: dict):
     if mk and settings.get("llm.warmup"):
         asyncio.create_task(ollama.warmup(str(settings.get(mk[0]))))
     return {"changed": changed}
+
+
+@app.get("/api/skills", dependencies=[Depends(auth)])
+async def skills():
+    return {"dir": str(tools.skills_dir()), "skills": tools.list_skills()}
+
+
+@app.post("/api/skills/reload", dependencies=[Depends(auth)])
+async def skills_reload():
+    n = tools.load_skills()
+    return {"loaded_plugin_tools": n, "dir": str(tools.skills_dir()), "skills": tools.list_skills()}
 
 
 @app.get("/api/history", dependencies=[Depends(auth)])

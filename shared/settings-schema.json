@@ -68,7 +68,7 @@
      "key": "llm.autoHeavyKeywords",
      "label": "Auto: keywords that force heavy",
      "type": "text",
-     "default": "file,folder,read,write,search,find,summarize,analyze,explain,code",
+     "default": "file,folder,read,write,search,find,summarize,analyze,explain,code,run,command,execute,git,install,script",
      "help": "Comma-separated. If the message contains one, auto mode uses the heavy model."
     },
     {
@@ -962,6 +962,97 @@
      "type": "bool",
      "default": false,
      "help": "delete_path (moves nothing to trash — permanent)."
+    },
+    {
+     "key": "agent.allowExec",
+     "label": "Allow running commands",
+     "type": "bool",
+     "default": false,
+     "help": "run_command: runs ONE program with arguments inside the workspace folder. No shell, so no pipes or &&. Off by default."
+    },
+    {
+     "key": "agent.confirmExec",
+     "label": "Ask before running a command",
+     "type": "bool",
+     "default": true,
+     "help": "Shows the exact command with Allow/Deny. Keep this on: the allow-list below is a speed bump, NOT a sandbox (git, python, npm can all run arbitrary code)."
+    },
+    {
+     "key": "agent.execMode",
+     "label": "Command policy",
+     "type": "select",
+     "default": "allowlist",
+     "help": "allowlist = only the programs listed below. any = anything except the deny list.",
+     "options": [
+      "allowlist",
+      "any"
+     ]
+    },
+    {
+     "key": "agent.execAllowlist",
+     "label": "Allowed commands",
+     "type": "text",
+     "default": "ls,dir,cat,type,echo,pwd,whoami,date,findstr,grep,tree,where,which,git",
+     "help": "Comma-separated program names. Adding python/node/pip/npm lets the model run arbitrary code, so only add them if you accept that."
+    },
+    {
+     "key": "agent.execDenylist",
+     "label": "Blocked commands",
+     "type": "text",
+     "default": "rm,rmdir,del,erase,format,mkfs,dd,shutdown,reboot,diskpart,reg,sudo,su,chmod,chown,powershell,pwsh,cmd,bash,sh,curl,wget",
+     "help": "Never run, even in 'any' mode."
+    },
+    {
+     "key": "agent.execTimeout",
+     "label": "Command timeout",
+     "type": "number",
+     "default": 30,
+     "help": "Commands running longer are stopped.",
+     "min": 1,
+     "max": 600,
+     "step": 1,
+     "unit": "s",
+     "slider": true
+    },
+    {
+     "key": "agent.execMaxChars",
+     "label": "Max command output returned",
+     "type": "number",
+     "default": 4000,
+     "help": "Longer output is cut.",
+     "min": 500,
+     "max": 40000,
+     "step": 500,
+     "unit": "",
+     "slider": true
+    },
+    {
+     "key": "agent.allowNet",
+     "label": "Allow network access",
+     "type": "bool",
+     "default": false,
+     "help": "Lets skills like fetch_url read web pages. Local/private addresses stay blocked."
+    },
+    {
+     "key": "agent.confirmNet",
+     "label": "Ask before network access",
+     "type": "bool",
+     "default": true,
+     "help": "Web pages can contain text that tries to give the model orders; confirmation keeps you in the loop."
+    },
+    {
+     "key": "agent.skillsEnabled",
+     "label": "Load plugin skills",
+     "type": "bool",
+     "default": true,
+     "help": "Tools from backend/skills/*.py. Reload them from Tools & diagnostics."
+    },
+    {
+     "key": "agent.skillsDisabled",
+     "label": "Disabled skills",
+     "type": "text",
+     "default": "",
+     "help": "Comma-separated tool names to switch off (e.g. get_time,system_info)."
     },
     {
      "key": "agent.confirmWrites",

@@ -5,6 +5,8 @@ Mirrors the backend's /api/test/* endpoints as agent skills:
 - debug_test_llm(tier)   — chat with one Ollama tier (fast / mid / heavy)
 - debug_test_tts(text)   — synthesize one sentence with Phonon
 - debug_test_workspace() — check the workspace folder is reachable
+
+Knowledge doc: ../knowledge/skills/debug_tmp.md
 """
 import asyncio
 import logging

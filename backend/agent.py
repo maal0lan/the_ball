@@ -87,7 +87,7 @@ def build_system_prompt() -> str:
     if not avail:
         return base
     root = tools.workspace_root()
-    lines = "\n".join(f"  {tools.TOOL_SIGNATURES[t]}" for t in avail)
+    lines = "\n".join(f"  {tools.signature(t)}" for t in avail)
     extra = str(settings.get("agent.extraInstructions") or "").strip()
     return (
         f"{base}\n\nYou can work with files in the user's workspace folder ({root.name}). "
