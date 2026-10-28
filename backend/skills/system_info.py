@@ -1,7 +1,4 @@
-"""Basic facts about this computer.
-
-Knowledge doc: ../knowledge/skills/system_info.md
-"""
+"""Basic facts about this computer."""
 import os
 import platform
 import shutil

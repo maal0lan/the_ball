@@ -23,7 +23,7 @@
 18. [Testing](#18-testing)
 19. [Known limitations and unverified parts](#19-known-limitations-and-unverified-parts)
 20. [Roadmap](#20-roadmap)
-21. [Settings reference (all 134)](#21-settings-reference)
+21. [Settings reference (all 135)](#21-settings-reference)
 
 ---
 
@@ -346,12 +346,23 @@ Every tool — built-in or plugin — is one entry in `tools.REGISTRY` with a **
 
 Only enabled tools are described to the model, and only enabled tools execute.
 
-### 9.2 The call format
-The model writes exactly one block and stops:
+### 9.2 The call format (and why the parser is forgiving)
+The prompt asks for exactly one block and then silence:
 ```
 <tool>{"name": "read_file", "args": {"path": "notes/todo.md"}}</tool>
 ```
-`ToolStreamFilter` watches the token stream: text before `<tool>` is shown/spoken normally; the block itself is hidden from the UI and from TTS (it handles `<tool>` split across chunks, and a missing `</tool>`); as soon as the block closes the stream is cut. Invalid JSON is fed back to the model as an error so it can retry. The result goes back as:
+Real models don't obey that precisely. Mistral 7B, for instance, was seen writing `` ```plaintext [tool] [name]: {...} ``` `` and its own native `[TOOL_CALLS] [{"name":…, "arguments":…}]`. So `ToolStreamFilter` (agent.py) accepts **any** of these openers — `<tool`, `[tool`, a code fence, `{"name"`, `{"function"`, `{"tool"` — and then looks for the first complete JSON object that looks like a call (`name` + `args`/`arguments`/`parameters`; arguments may even be a JSON string). Details:
+
+* Ordinary text streams through untouched. The moment a possible opener appears, everything is **held back** (so raw JSON never reaches the chat box or the voice). Once a complete call is recognised the stream is cut.
+* If the held text turns out to be an ordinary code block or non-tool JSON (e.g. a `package.json` example), it is **released** as normal text at the end.
+* Raw newlines inside JSON strings are accepted (`json.loads(strict=False)`); models do this constantly.
+* A call that starts but never completes (usually: **the token limit cut it off mid-file**) is flagged *suspect*: the user sees "malformed or cut off. Retrying…", the model is told to resend valid JSON with shorter content, and it counts as a step.
+* Unknown tool names get an error listing the tools that *are* available, so the model can self-correct.
+* The prompt's example call always uses a tool that is actually enabled.
+
+**Token budget.** Writing a file puts its whole content inside the tool call, so with tools on the reply limit is `max(llm.maxTokens, agent.toolMaxTokens)` (default 1500). If big files still get cut off, raise *Settings → Agent → Max tokens when tools are on*.
+
+The result goes back as:
 ```
 <tool_result> …text… </tool_result>
 Now answer the user.
@@ -538,6 +549,8 @@ When you're done developing: Settings → Debug → turn off *Open debug console
 | My skill doesn't show up | load error or name starts with `_` | Tools → *List / reload skills* shows `✗ file.py: error`; full traceback in the console |
 | `Tool 'x' is not available` | tool disabled or no workspace | Settings → Agent: set folder, enable read/write |
 | `outside the workspace folder. Access denied.` | the sandbox working | use a path inside the folder |
+| Model chats about the file instead of creating it | tools not active, or model too small | Tools → *List / reload skills* must show write_file ● (needs a workspace folder + *Allow writing*); use mode `heavy`; check the console for `Parsed tool call:` |
+| Console: `malformed or cut-off tool call` | reply hit the token limit mid-file | raise *Max tokens when tools are on*; ask for shorter files; use a bigger model |
 | Model prints `<tool>…` as text or ignores tools | model too small / bad format | use mid/heavy for file tasks; add keywords to `autoHeavyKeywords` |
 | Settings change doesn't apply | marked "Needs a backend restart" | tray → Restart backend |
 | `settings.json is corrupt` dialog at start | hand-edit typo | fix the JSON or delete the file (defaults return) |
@@ -709,7 +722,7 @@ Self-test notes: it draws a test pattern behind the ball, injects it as the "des
 
 ## 21. Settings reference
 
-Generated from `shared/settings-schema.json` (134 settings). Keys are what you use in code (`settings.get("llm.temperature")`).
+Generated from `shared/settings-schema.json` (135 settings). Keys are what you use in code (`settings.get("llm.temperature")`).
 
 
 ### Brain (LLM)
@@ -860,6 +873,7 @@ Lets the model read and (optionally) change files in one folder you choose.
 | `agent.skillsEnabled` | Load plugin skills | bool | `true` |  | Tools from backend/skills/*.py. Reload them from Tools & diagnostics. |
 | `agent.skillsDisabled` | Disabled skills | text | `` |  | Comma-separated tool names to switch off (e.g. get_time,system_info). |
 | `agent.confirmWrites` | Ask before write/delete | bool | `true` |  | Shows Allow/Deny buttons in the dialogue box. Strongly recommended. |
+| `agent.toolMaxTokens` | Max tokens when tools are on | number | `1500` | 256 – 8192 | Writing a file puts its whole content inside the tool call, so this must be bigger than a normal reply. If file writes get cut off, raise it. |
 | `agent.maxSteps` | Max tool steps per message | number | `5` | 1 – 20 | Stops runaway loops. |
 | `agent.maxReadChars` | Max characters returned per read | number | `6000` | 500 – 60000 | Larger files are truncated. |
 | `agent.maxListEntries` | Max directory entries listed | number | `200` | 20 – 2000 |  |

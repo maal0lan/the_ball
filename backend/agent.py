@@ -23,61 +23,156 @@ Emit = Callable[[dict], Awaitable[None]]
 
 OPEN, CLOSE = "<tool>", "</tool>"
 
+# Real models rarely follow the requested format exactly. Mistral 7B, for example, writes things like
+#   [tool] [name]: {"name": "write_file", ...}          or   ```json {"name": ...} ```
+#   or its native   [TOOL_CALLS] [{"name": ..., "arguments": {...}}]
+# so we accept ANY of these openers, then look for the first complete JSON object that looks like a call.
+_OPEN_RE = re.compile(r'<tool|\[tool|```|\{\s*"(?:name|function|tool)"', re.I)
+_OPEN_LITERALS = ['<tool', '[tool', '```', '{"name"', '{ "name"', '{"function"', '{"tool"']
+
+
+def _partial_open_len(buf: str) -> int:
+    """How many trailing characters of buf might be the start of an opener (so we hold them back)."""
+    low = buf.lower()
+    for k in range(min(max(map(len, _OPEN_LITERALS)) - 1, len(low)), 0, -1):
+        if any(lit.startswith(low[-k:]) for lit in _OPEN_LITERALS):
+            return k
+    return 0
+
+
+def find_json_object(text: str) -> str | None:
+    """First balanced {...} in text (string/escape aware), or None if it is incomplete or absent."""
+    i = text.find("{")
+    if i < 0:
+        return None
+    depth, in_str, esc = 0, False, False
+    for j in range(i, len(text)):
+        c = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[i:j + 1]
+    return None
+
+
+def extract_tool_call(text: str) -> tuple[str, dict] | None:
+    """Return (name, args) if text contains a complete, recognisable tool call, else None."""
+    obj = find_json_object(text)
+    if obj is None:
+        return None
+    try:
+        data = json.loads(obj, strict=False)        # strict=False: models put raw newlines inside strings
+    except ValueError:
+        return None
+    if isinstance(data, dict) and isinstance(data.get("function"), dict):
+        data = data["function"]
+    if not isinstance(data, dict):
+        return None
+    name = data.get("name") or data.get("tool")
+    args = data.get("args", data.get("arguments", data.get("parameters")))
+    if not isinstance(name, str):
+        return None
+    if args is None:
+        if name not in tools.REGISTRY:               # a bare {"name": "x"} that is not a tool (e.g. package.json)
+            return None
+        args = {}
+    if isinstance(args, str):
+        try:
+            args = json.loads(args, strict=False)
+        except ValueError:
+            return None
+    return (name, args) if isinstance(args, dict) else None
+
+
+def looks_like_tool(text: str) -> bool:
+    low = text.lower()
+    return ("<tool" in low or "[tool" in low or
+            (re.search(r'"name"\s*:', text) is not None and re.search(r'"(args|arguments|parameters)"\s*:', text) is not None))
+
 
 class ToolStreamFilter:
-    """Hides <tool>{json}</tool> from the visible/spoken text and captures the JSON."""
+    """
+    Streams ordinary text through untouched, but the moment something that might be a tool call starts
+    (<tool, [tool, ``` or {"name") it HOLDS everything back. Once a complete call is recognised the stream
+    can be cut (done=True). At the end, held text that was not a tool call (a normal code block) is released.
+    """
 
     def __init__(self) -> None:
-        self.buf = ""
-        self.in_tool = False
+        self.pending = ""
+        self.held = ""
+        self.holding = False
         self.done = False
+        self.suspect = False      # looked like a tool call but was malformed / cut off
         self.tool_text = ""
 
     def feed(self, s: str) -> str:
         if self.done:
             return ""
-        self.buf += s
-        out = ""
-        while True:
-            if not self.in_tool:
-                i = self.buf.find(OPEN)
-                if i >= 0:
-                    out += self.buf[:i]
-                    self.buf = self.buf[i + len(OPEN):]
-                    self.in_tool = True
-                    continue
-                keep = 0
-                for k in range(min(len(OPEN) - 1, len(self.buf)), 0, -1):
-                    if OPEN.startswith(self.buf[-k:]):
-                        keep = k
-                        break
-                out += self.buf[:len(self.buf) - keep]
-                self.buf = self.buf[len(self.buf) - keep:]
-                return out
-            j = self.buf.find(CLOSE)
-            if j >= 0:
-                self.tool_text, self.buf, self.done = self.buf[:j], "", True
+        if self.holding:
+            self.held += s
+            self._check()
+            return ""
+        self.pending += s
+        m = _OPEN_RE.search(self.pending)
+        if m:
+            out, self.held, self.pending, self.holding = self.pending[:m.start()], self.pending[m.start():], "", True
+            self._check()
             return out
+        k = _partial_open_len(self.pending)
+        out, self.pending = self.pending[:len(self.pending) - k], self.pending[len(self.pending) - k:]
+        return out
+
+    def _check(self) -> None:
+        if extract_tool_call(self.held) is not None:
+            self.done, self.tool_text = True, self.held
 
     def flush(self) -> str:
-        if self.in_tool and not self.done:  # model forgot </tool>: still try to use it
-            self.tool_text, self.done = self.buf, True
-            self.buf = ""
+        """Text that should still be shown when the stream ends."""
+        if self.done:
             return ""
-        out, self.buf = self.buf, ""
+        if not self.holding:
+            out, self.pending = self.pending, ""
+            return out
+        if looks_like_tool(self.held):
+            self.suspect = True
+            return ""
+        out, self.held = self.held, ""
         return out
 
 
 def parse_tool_call(raw: str) -> tuple[str, dict]:
-    m = re.search(r"\{.*\}", raw, re.S)
-    if not m:
-        raise ValueError("no JSON object found inside <tool>")
-    data = json.loads(m.group(0))
-    name = data.get("name")
-    args = data.get("args", data.get("arguments", {})) or {}
-    if not isinstance(name, str) or not isinstance(args, dict):
-        raise ValueError('expected {"name": str, "args": object}')
-    return name, args
+    call = extract_tool_call(raw)
+    if call is None:
+        raise ValueError("no complete tool call found (invalid JSON, or the reply was cut off)")
+    return call
+
+
+def _example_call(avail: list[str]) -> str:
+    """A format example that uses a tool the model is actually allowed to call."""
+    samples = {
+        "write_file": ("write_file", {"path": "notes/todo.md", "content": "first line\nsecond line"}),
+        "read_file": ("read_file", {"path": "notes/todo.md"}),
+        "list_dir": ("list_dir", {"path": "."}),
+        "run_command": ("run_command", {"command": "git status"}),
+    }
+    for key in samples:
+        if key in avail:
+            name, args = samples[key]
+            break
+    else:
+        name, args = avail[0], {}
+    return f'{OPEN}{json.dumps({"name": name, "args": args})}{CLOSE}'
 
 
 def build_system_prompt() -> str:
@@ -89,13 +184,16 @@ def build_system_prompt() -> str:
     root = tools.workspace_root()
     lines = "\n".join(f"  {tools.signature(t)}" for t in avail)
     extra = str(settings.get("agent.extraInstructions") or "").strip()
+    where = f"The user's workspace folder is '{root.name}'; paths are relative to it. " if root else ""
     return (
-        f"{base}\n\nYou can work with files in the user's workspace folder ({root.name}). "
-        "To use a tool, write exactly one block like this and then stop:\n"
-        f'{OPEN}{{"name": "read_file", "args": {{"path": "notes/todo.md"}}}}{CLOSE}\n'
+        f"{base}\n\nYou can act on the user's computer with tools. {where}"
+        "To use a tool, reply with ONLY one tool block and nothing else: no explanation before it, no code fence, no markdown. Exactly:\n"
+        f"{_example_call(avail)}\n"
+        "Inside the JSON, write new lines as \\n and escape double quotes. One tool per reply.\n"
         f"Available tools:\n{lines}\n"
-        "Paths are relative to the workspace. After you receive the tool result, answer in plain spoken "
-        "language. Never invent file contents; if a tool fails, say what went wrong."
+        "When the user asks you to create, save, read, list, search or run something, you MUST use the matching tool. "
+        "Never paste file contents into the chat instead of saving them with a tool, and never claim you did something until a "
+        "tool result confirms it. After the tool result arrives, tell the user what happened in one or two plain sentences."
         + (f"\n{extra}" if extra else "")
     )
 
@@ -177,13 +275,15 @@ async def run_turn(session_id: str, text: str, emit: Emit,
     past = [{"role": m["role"], "content": m["content"]} for m in past][-(n_turns * 2):] if n_turns else []
     messages = [{"role": "system", "content": build_system_prompt()}, *past, {"role": "user", "content": text}]
 
+    # Writing a file means emitting its whole content inside the tool call, so allow more tokens than a chat reply.
+    tool_budget = max(int(settings.get("llm.maxTokens")), int(settings.get("agent.toolMaxTokens"))) if tool_list else None
     speech = SpeechQueue(emit)
     visible_all = ""
     try:
         for step in range(int(settings.get("agent.maxSteps")) + 1):
             filt = ToolStreamFilter()
             raw = ""
-            async for tok in ollama.chat_stream(model, messages):
+            async for tok in ollama.chat_stream(model, messages, tool_budget):
                 raw += tok
                 vis = filt.feed(tok)
                 if vis:
@@ -200,6 +300,16 @@ async def run_turn(session_id: str, text: str, emit: Emit,
             if settings.get("debug.logPrompts"):
                 log.debug("REPLY <- %s (step %d)\n%s", model, step, raw)
 
+            if filt.suspect:
+                log.warning("Malformed or cut-off tool call from %s: %r", model, filt.held[:300])
+                await emit({"type": "info", "message": "The model started a tool call but it was malformed or cut off. "
+                            "Retrying… (if this repeats: raise Settings → Agent → Max tokens for tool calls, or use a bigger model)"})
+                if step >= int(settings.get("agent.maxSteps")):
+                    break
+                messages += [{"role": "assistant", "content": raw},
+                             {"role": "user", "content": 'Your tool call was invalid or incomplete. Reply with ONLY: <tool>{"name": "...", "args": {...}}</tool> '
+                                                         "with valid JSON (new lines as \\n, escaped quotes) and keep file contents short."}]
+                continue
             if not filt.done:
                 break
             if step >= int(settings.get("agent.maxSteps")):
@@ -208,6 +318,7 @@ async def run_turn(session_id: str, text: str, emit: Emit,
 
             try:
                 name, args = parse_tool_call(filt.tool_text)
+                log.info("Parsed tool call: %s %s", name, json.dumps(args, ensure_ascii=False)[:200])
             except Exception as e:
                 log.warning("Bad tool call %r: %s", filt.tool_text[:200], e)
                 messages += [{"role": "assistant", "content": raw},

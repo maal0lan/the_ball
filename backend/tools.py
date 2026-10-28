@@ -33,10 +33,10 @@ class ToolError(Exception):
 
 
 def register(name: str, signature: str, perm: str, fn: Callable, describe: Callable[[dict], str] | None = None,
-             source: str = "builtin") -> None:
+             source: str = "builtin", confirm: bool = False) -> None:
     if perm not in PERM_SETTING:
         raise ValueError(f"unknown permission '{perm}' (use one of {sorted(PERM_SETTING)})")
-    REGISTRY[name] = {"name": name, "sig": signature, "perm": perm, "fn": fn, "describe": describe, "source": source}
+    REGISTRY[name] = {"name": name, "sig": signature, "perm": perm, "fn": fn, "describe": describe, "source": source, "confirm": confirm}
 
 
 def signature(name: str) -> str:
@@ -52,17 +52,13 @@ def workspace_root() -> Path | None:
 
 
 def enabled_tools() -> list[str]:
+    if not settings.get("agent.enabled"):
+        return []
     has_ws = workspace_root() is not None
     off = settings.csv("agent.skillsDisabled")
     out = []
     for name, t in REGISTRY.items():
         if t["source"] != "builtin" and (not settings.get("agent.skillsEnabled") or name in off):
-            continue
-        if t["perm"] == "misc":
-            # Harmless, needs no workspace and no switch — always available.
-            out.append(name)
-            continue
-        if not settings.get("agent.enabled"):
             continue
         if t["perm"] in NEEDS_WORKSPACE and not has_ws:
             continue
@@ -73,9 +69,32 @@ def enabled_tools() -> list[str]:
     return out
 
 
+def why_inactive(name: str) -> str:
+    """Plain-English reason a tool is not available right now ('' if it is active)."""
+    t = REGISTRY[name]
+    if not settings.get("agent.enabled"):
+        return "'Enable file tools' is OFF (Settings → Agent)"
+    if t["source"] != "builtin":
+        if not settings.get("agent.skillsEnabled"):
+            return "'Load plugin skills' is OFF"
+        if name in settings.csv("agent.skillsDisabled"):
+            return "listed in 'Disabled skills'"
+    if t["perm"] in NEEDS_WORKSPACE and workspace_root() is None:
+        w = str(settings.get("agent.workspace") or "").strip()
+        return (f"workspace folder '{w}' does not exist" if w else "NO WORKSPACE FOLDER is set (Settings → Agent → Workspace folder → Browse…)")
+    key = PERM_SETTING[t["perm"]]
+    if key and not settings.get(key):
+        label = {"agent.allowRead": "Allow reading", "agent.allowWrite": "Allow writing", "agent.allowDelete": "Allow deleting",
+                 "agent.allowExec": "Allow running commands", "agent.allowNet": "Allow network access"}[key]
+        return f"'{label}' is OFF (Settings → Agent)"
+    return ""
+
+
 def needs_confirmation(tool: str) -> bool:
     t = REGISTRY.get(tool)
     if not t:
+        return True
+    if t.get("confirm"):
         return True
     return bool({"write": settings.get("agent.confirmWrites"), "delete": settings.get("agent.confirmWrites"),
                  "exec": settings.get("agent.confirmExec"), "net": settings.get("agent.confirmNet")}.get(t["perm"], False))
@@ -83,7 +102,8 @@ def needs_confirmation(tool: str) -> bool:
 
 def list_skills() -> list[dict]:
     on = set(enabled_tools())
-    return [{"name": n, "perm": t["perm"], "source": t["source"], "signature": t["sig"], "active": n in on}
+    return [{"name": n, "perm": t["perm"], "source": t["source"], "signature": t["sig"], "active": n in on,
+             "reason": "" if n in on else why_inactive(n), "confirm": needs_confirmation(n)}
             for n, t in REGISTRY.items()] + [{"name": k, "error": v} for k, v in SKILL_ERRORS.items()]
 
 
@@ -181,7 +201,7 @@ def describe(tool: str, args: dict) -> str:
 def execute(tool: str, args: dict) -> dict:
     try:
         if tool not in enabled_tools():
-            raise ToolError(f"Tool '{tool}' is not available (disabled in Settings → Agent).")
+            raise ToolError(f"Tool '{tool}' is not available. Tools you can use right now: {', '.join(enabled_tools()) or 'none'}.")
         result = REGISTRY[tool]["fn"](**(args or {}))
         log.info("tool %s ok", tool)
         return {"ok": True, "result": result if isinstance(result, str) else str(result)}

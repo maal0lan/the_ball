@@ -78,7 +78,8 @@ async def status():
         "ollama": {"host": ollama.host, "reachable": bool(models), "models": models},
         "tiers": {t: settings.get(f"llm.model.{t}") for t in ("fast", "mid", "heavy")},
         "tts": {"engine": settings.get("voice.engine"), "model": settings.get("voice.model"), "loaded": phonon.loaded},
-        "workspace": {"path": str(root) if root else None, "tools": tools.enabled_tools()},
+        "workspace": {"path": str(root) if root else None, "configured": settings.get("agent.workspace"), "tools": tools.enabled_tools(),
+                      "inactive": {s["name"]: s["reason"] for s in tools.list_skills() if s.get("reason")}},
         "history_db": str(history._DB),
     }
 

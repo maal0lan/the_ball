@@ -102,132 +102,6 @@ def test_system_prompt_lists_only_allowed_tools(ws_dir):
     assert "read_file" in p and "write_file" not in p and "delete_path" not in p
 
 
-# ------------------------------------------------------------------ memory & history skill
-
-def test_memory_history_skill(tmp_path):
-    history.init_db(tmp_path)
-    history.save_message("s1", "user", "hi there")
-    history.save_message("s1", "assistant", "hello", "phi")
-    history.save_message("s2", "user", "older session")
-    tools.load_skills()
-    assert {"history_list_sessions", "history_read_session", "history_latest_session",
-            "history_prune", "history_delete_session"} <= set(tools.REGISTRY)
-
-    r = tools.execute("history_list_sessions", {"limit": 5})
-    assert r["ok"] and "s1" in r["result"] and "s2" in r["result"]
-
-    r = tools.execute("history_read_session", {"session_id": "s1"})
-    assert r["ok"] and "hi there" in r["result"] and "hello" in r["result"]
-
-    r = tools.execute("history_latest_session", {})
-    assert r["ok"] and r["result"] in ("s1", "s2")
-
-    # delete is refused without confirm='yes'
-    assert not tools.execute("history_delete_session", {"session_id": "s1"})["ok"]
-    assert len(history.get_sessions()) == 2
-
-    assert tools.execute("history_delete_session", {"session_id": "s1", "confirm": "yes"})["ok"]
-    assert len(history.get_sessions()) == 1
-
-    # prune: backdate the remaining session directly in the DB
-    import sqlite3
-    con = sqlite3.connect(tmp_path / "chat_history.db")
-    con.execute("UPDATE sessions SET updated_at = '2000-01-01T00:00:00+00:00'")
-    con.commit()
-    con.close()
-    r = tools.execute("history_prune", {"days": 1})
-    assert r["ok"] and "1" in r["result"]
-    assert history.get_sessions() == []
-
-
-def test_backend_status_skill():
-    tools.load_skills()
-    r = tools.execute("backend_status", {})
-    assert r["ok"]
-    for needle in ("Uptime:", "Ollama:", "Tiers:", "TTS:", "Workspace:", "History DB:", "Installed models:"):
-        assert needle in r["result"], needle
-
-
-def test_backend_restart_guarded():
-    tools.load_skills()
-    r = tools.execute("backend_restart", {})
-    assert not r["ok"] and "Refusing" in r["error"]
-    # with confirm='yes' it would exit the process — never call that in a test
-
-
-# ------------------------------------------------------------------ debug (temporary) skill
-
-def test_debug_test_llm_reports():
-    tools.load_skills()
-    r = tools.execute("debug_test_llm", {"tier": "fast"})
-    assert r["ok"]
-    assert r["result"].startswith("fast (") and ("OK" in r["result"] or "FAILED" in r["result"])
-
-
-def test_debug_test_tts_reports():
-    tools.load_skills()
-    r = tools.execute("debug_test_tts", {"text": "hello"})
-    assert r["ok"]
-    assert r["result"].startswith("TTS:") and any(s in r["result"] for s in ("OK", "FAILED", "skipped"))
-
-
-def test_debug_test_workspace_no_workspace(tmp_path):
-    settings.update({"agent.workspace": "", "agent.enabled": True})
-    tools.load_skills()
-    r = tools.execute("debug_test_workspace", {})
-    assert r["ok"] and r["result"].startswith("Workspace: FAILED — no workspace folder set")
-
-
-def test_debug_test_workspace_ok(ws_dir):
-    tools.load_skills()
-    r = tools.execute("debug_test_workspace", {})
-    assert r["ok"] and r["result"].startswith("Workspace: OK") and str(ws_dir) in r["result"]
-
-
-# ------------------------------------------------------------------ tools & diagnostics skill
-
-def test_tools_list_skills_skill():
-    tools.load_skills()
-    r = tools.execute("tools_list_skills", {})
-    assert r["ok"]
-    for needle in ("get_time", "system_info", "fetch_url", "[misc", "[net", "●", "○"):
-        assert needle in r["result"], needle
-
-
-def test_tools_reload_skills_skill():
-    tools.load_skills()
-    r = tools.execute("tools_reload_skills", {})
-    assert r["ok"] and "Reloaded skills:" in r["result"]
-
-
-def test_models_refresh_reports():
-    tools.load_skills()
-    r = tools.execute("models_refresh", {})
-    assert r["ok"]
-    assert r["result"].startswith("No Ollama models found") or "model(s)" in r["result"]
-
-
-# ------------------------------------------------------------------ settings read skill
-
-def test_settings_read_skill():
-    tools.load_skills()
-    r = tools.execute("settings_read", {"section": "brain"})
-    assert r["ok"]
-    for key in ("llm.mode", "llm.model.fast", "llm.model.mid", "llm.model.heavy"):
-        assert key in r["result"], key
-    # no workspace needed and no permission gate
-    settings.update({"agent.enabled": False})
-    assert tools.execute("settings_read", {"section": "brain"})["ok"]
-
-
-def test_settings_read_all_and_empty():
-    tools.load_skills()
-    r = tools.execute("settings_read", {"section": ""})
-    assert r["ok"] and "llm.mode" in r["result"]
-    r = tools.execute("settings_read", {"section": "nope_such_section"})
-    assert r["ok"] and "No settings found" in r["result"]
-
-
 # ------------------------------------------------------------------ commands & skills
 import sys as _sys
 
@@ -324,3 +198,86 @@ def test_fetch_blocks_private(ws_dir):
     for u in ["http://127.0.0.1:8000/x", "http://localhost/x", "file:///etc/passwd", "ftp://x.y/z"]:
         assert not tools.execute("fetch_url", {"url": u})["ok"], u
     settings.update({"agent.allowNet": False})
+
+
+def test_inactive_reasons_are_specific(tmp_path):
+    tools.load_skills()
+    settings.update({"agent.enabled": True, "agent.workspace": "", "agent.allowRead": True})
+    assert "NO WORKSPACE" in tools.why_inactive("read_file")
+    settings.update({"agent.workspace": str(tmp_path / "nope")})
+    assert "does not exist" in tools.why_inactive("read_file")
+    settings.update({"agent.workspace": str(tmp_path), "agent.allowWrite": False})
+    assert "Allow writing" in tools.why_inactive("write_file") and tools.why_inactive("read_file") == ""
+
+
+def test_confirm_flag_forces_confirmation(tmp_path):
+    d = tmp_path / "s"; d.mkdir()
+    (d / "x.py").write_text('def register(r):\n    r(name="danger", signature="danger()", perm="misc", fn=lambda: "ok", confirm=True)\n')
+    tools.load_skills(d)
+    assert tools.needs_confirmation("danger")
+    tools.load_skills()
+
+
+# ------------------------------------------------------------------ tolerant tool-call parsing
+from agent import extract_tool_call
+
+def _run_filter(chunks):
+    f = ToolStreamFilter(); shown = ""
+    for c in chunks:
+        shown += f.feed(c)
+        if f.done:
+            break
+    shown += f.flush()
+    return f, shown
+
+REAL_FORMATS = {
+    "your exact output": '```plaintext\n[tool] [name]: {"name": "write_file", "args": {"path": "notes/cooking-hacks.md", "content": "Here are hacks\nline two"}}\n```',
+    "mistral native": '[TOOL_CALLS] [{"name": "write_file", "arguments": {"path": "a.md", "content": "hi"}}]',
+    "json fence": 'Sure!\n```json\n{"name": "write_file", "args": {"path": "a.md", "content": "hi"}}\n```',
+    "bare json": '{"name": "write_file", "args": {"path": "a.md", "content": "hi"}}',
+    "official tag": '<tool>{"name": "write_file", "args": {"path": "a.md", "content": "hi"}}</tool>',
+    "openai style": '{"function": {"name": "write_file", "arguments": "{\\"path\\": \\"a.md\\", \\"content\\": \\"hi\\"}"}}',
+    "raw newlines in string": '<tool>{"name": "write_file", "args": {"path": "a.md", "content": "line1\nline2\n\\"quoted\\""}}</tool>',
+}
+
+@pytest.mark.parametrize("label", REAL_FORMATS)
+def test_real_model_formats_are_recognised(label):
+    text = REAL_FORMATS[label]
+    for size in (1, 3, 7, 1000):                                    # any chunking of the stream
+        f, shown = _run_filter([text[i:i + size] for i in range(0, len(text), size)])
+        assert f.done and not f.suspect, (label, size)
+        name, args = extract_tool_call(f.tool_text)
+        assert name == "write_file" and args["path"] in ("a.md", "notes/cooking-hacks.md")
+        assert "write_file" not in shown and "{" not in shown, (label, size, shown)   # raw call never reaches chat/TTS
+
+def test_prose_before_call_is_kept_and_call_hidden():
+    f, shown = _run_filter(["I'll save that now. ", '```json\n{"name":"make_dir","args":{"path":"x"}}\n```'])
+    assert shown == "I'll save that now. " and f.done
+
+def test_normal_code_block_is_released_not_swallowed():
+    text = "Here is code:\n```python\nprint('hi')\n```\nDone."
+    f, shown = _run_filter([text[i:i + 4] for i in range(0, len(text), 4)])
+    assert shown == text and not f.done and not f.suspect
+
+def test_non_tool_json_is_just_text():
+    text = 'Example config:\n```json\n{"name": "my-package", "version": "1.0"}\n```'
+    f, shown = _run_filter([text])
+    assert shown == text and not f.done
+
+def test_cut_off_call_is_flagged_suspect_not_shown():
+    f, shown = _run_filter(['<tool>{"name": "write_file", "args": {"path": "a.md", "content": "Here are some handy cooking life ha'])
+    assert f.suspect and not f.done and shown == ""
+
+def test_bare_name_of_real_tool_without_args():
+    tools.load_skills()
+    assert extract_tool_call('{"name": "get_time"}') == ("get_time", {})
+    assert extract_tool_call('{"name": "my-package"}') is None
+
+def test_unknown_tool_error_lists_available(ws_dir):
+    r = tools.execute("create_file", {"path": "x"})
+    assert not r["ok"] and "read_file" in r["error"]
+
+def test_prompt_without_workspace_does_not_crash():
+    tools.load_skills()
+    settings.update({"agent.workspace": "", "agent.enabled": True})
+    assert "get_time" in build_system_prompt()

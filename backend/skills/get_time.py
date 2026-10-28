@@ -1,7 +1,4 @@
-"""Tells the assistant the current date/time (small models cannot know it).
-
-Knowledge doc: ../knowledge/skills/get_time.md
-"""
+"""Tells the assistant the current date/time (small models cannot know it)."""
 from datetime import datetime
 
 

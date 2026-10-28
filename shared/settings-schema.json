@@ -1062,6 +1062,18 @@
      "help": "Shows Allow/Deny buttons in the dialogue box. Strongly recommended."
     },
     {
+     "key": "agent.toolMaxTokens",
+     "label": "Max tokens when tools are on",
+     "type": "number",
+     "default": 1500,
+     "help": "Writing a file puts its whole content inside the tool call, so this must be bigger than a normal reply. If file writes get cut off, raise it.",
+     "min": 256,
+     "max": 8192,
+     "step": 128,
+     "unit": "",
+     "slider": true
+    },
+    {
      "key": "agent.maxSteps",
      "label": "Max tool steps per message",
      "type": "number",

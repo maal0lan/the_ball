@@ -114,7 +114,7 @@ function renderTools(box) {
       if (d.wav) new Audio('data:audio/wav;base64,' + d.wav).play(); else if (d.engine === 'system') speechSynthesis.speak(new SpeechSynthesisUtterance('Crystal voice check.'));
     }),
     btn('Check workspace folder', async () => { const r = await api('POST', '/api/test/workspace'); say(JSON.stringify(r.data, null, 2)); }),
-    btn('List / reload skills', async () => { const r = await api('POST', '/api/skills/reload'); const d = r.data || {}; say(`Skills folder: ${d.dir}\n\n` + (d.skills || []).map(s => s.error ? `✗ ${s.name}: ${s.error}` : `${s.active ? '●' : '○'} ${s.name}  [${s.perm}, ${s.source}]${s.active ? '' : '  (inactive: disabled in Settings or no workspace)'}`).join('\n')); }),
+    btn('List / reload skills', async () => { const r = await api('POST', '/api/skills/reload'); const d = r.data || {}; say(`Skills folder: ${d.dir}\n\n` + (d.skills || []).map(s => s.error ? `✗ ${s.name}: ${s.error}` : `${s.active ? '●' : '○'} ${s.name}  [${s.perm}${s.confirm ? ', asks first' : ''}, ${s.source}]${s.active ? '' : '\n      ↳ inactive because: ' + s.reason}`).join('\n')); }),
     btn('Refresh model list', async () => { const r = await api('GET', '/api/models'); modelNames = (r.data && r.data.llm_models) || []; say(modelNames.length ? 'Installed Ollama models:\n' + modelNames.join('\n') : 'No models found. Is Ollama running?'); }),
     btn('Restart backend', async () => { await crystal.backend.restart(); say('Backend restarted. Watch the Debug console.'); }),
     btn('Open debug console', () => crystal.win.openConsole()),

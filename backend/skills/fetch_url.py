@@ -2,8 +2,6 @@
 Fetch a web page as plain text. OFF by default: enable Settings → Agent → Allow network access.
 Blocks localhost / private-network addresses (so a page or prompt cannot make the agent poke your LAN or
 this app's own backend), http(s) only, 1 MB cap, 15 s timeout.
-
-Knowledge doc: ../knowledge/skills/fetch_url.md
 """
 import ipaddress
 import re
