@@ -1090,6 +1090,36 @@
      "help": "Comma-separated tool names to switch off (e.g. get_time,system_info)."
     },
     {
+     "key": "agent.skillTrust",
+     "label": "Skill trust",
+     "type": "select",
+     "default": "require",
+     "help": "require = a skill file loads only after you trust it (Tools & diagnostics). warn = every skill loads and unreviewed ones are only flagged. Code skills run with your full privileges, so keep 'require' unless you are developing a skill.",
+     "options": [
+      "require",
+      "warn"
+     ]
+    },
+    {
+     "key": "agent.trustedSkills",
+     "label": "Trusted skills",
+     "type": "text",
+     "default": "{}",
+     "help": "Managed by Tools & diagnostics → Trust this skill. JSON of file name → SHA-256. A trusted file stops being trusted if even one byte changes. Never import this from someone else."
+    },
+    {
+     "key": "agent.skillMaxChars",
+     "label": "Max characters per instruction skill",
+     "type": "number",
+     "default": 4000,
+     "help": "Longer instruction skills are cut off when the model reads them (small models have small context).",
+     "min": 500,
+     "max": 20000,
+     "step": 500,
+     "unit": "",
+     "slider": true
+    },
+    {
      "key": "agent.confirmWrites",
      "label": "Ask before write/delete",
      "type": "bool",

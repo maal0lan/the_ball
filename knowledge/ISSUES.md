@@ -52,3 +52,22 @@ See `room-for-improvement/README.md` for longer-term improvement notes.
 GitHub issue creation (`gh issue create`) is blocked in this sandbox, so issues are recorded
 here instead. When you have GitHub access, create issues on
 `github.com/maal0lan/the_ball` referencing branch `feature/backend-skills-complete`.
+
+
+## Skill trust and instruction skills — branch `feature/skill-trust` (2026-10-29)
+
+Addresses the "plugin skills run with full privileges, nothing verifies them" issue. **Written but not yet evaluated.**
+
+| Acceptance criterion | Where |
+|---|---|
+| Unsigned/unknown skill files show a warning in Tools & diagnostics | `renderer/settings.js` `showSkills()`; `tools.SKILL_FILES`; `/api/skills`, `/api/status` → `skills.needs_review` |
+| Option to trust a skill by hash/path | "Trust this skill" button → setting `agent.trustedSkills` `{file: sha256}`; bundled hashes in `backend/skills_manifest.json` |
+| No auto-loading of skills from outside `backend/skills/` | `tools.skills_dir()` ignores `CRYSTAL_SKILLS_DIR` unless `CRYSTAL_ALLOW_EXTERNAL_SKILLS=1`; symlinks outside skipped in `skill_trust.discover()` |
+| Documented risk in docs | `docs/DOCUMENTATION.md` §9.5, §16, §19 |
+
+Also added: markdown "instruction skills" (`*.md`, `<name>/SKILL.md`, read via `use_skill(name)`), hash-then-run-the-same-bytes
+loading, a ban on skills replacing built-in tools, and agent write/delete protection for the skills folder + manifest.
+
+Known gaps / follow-ups: trust list lives in plain settings (an imported settings file could carry it); no signatures
+(hash proves "the file you reviewed", not "safe"); an agent with `run_command` rights over the Crystal folder could still edit
+the manifest; `debug_tmp.py` is still bundled and trusted.

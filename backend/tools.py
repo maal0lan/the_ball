@@ -7,10 +7,13 @@ import importlib.util
 import logging
 import os
 import shlex
+import re
 import subprocess
+import types
 from pathlib import Path
 from typing import Callable
 
+import skill_trust
 from config import settings
 
 log = logging.getLogger("backend.tools")
@@ -26,6 +29,8 @@ PERM_SETTING = {"read": "agent.allowRead", "write": "agent.allowWrite", "delete"
 NEEDS_WORKSPACE = {"read", "write", "delete", "exec"}
 REGISTRY: dict[str, dict] = {}
 SKILL_ERRORS: dict[str, str] = {}
+SKILL_FILES: list[dict] = []                 # one entry per skill file seen on the last load (trust status, hash, loaded?)
+INSTRUCTION_SKILLS: dict[str, dict] = {}     # markdown skills, read by the model through use_skill(name)
 
 
 class ToolError(Exception):
@@ -60,6 +65,8 @@ def enabled_tools() -> list[str]:
     for name, t in REGISTRY.items():
         if t["source"] != "builtin" and (not settings.get("agent.skillsEnabled") or name in off):
             continue
+        if name == "use_skill" and not instruction_skills():
+            continue
         if t["perm"] in NEEDS_WORKSPACE and not has_ws:
             continue
         key = PERM_SETTING[t["perm"]]
@@ -74,6 +81,8 @@ def why_inactive(name: str) -> str:
     t = REGISTRY[name]
     if not settings.get("agent.enabled"):
         return "'Enable file tools' is OFF (Settings → Agent)"
+    if name == "use_skill" and not instruction_skills():
+        return "no instruction skills (.md) are loaded, trusted and enabled"
     if t["source"] != "builtin":
         if not settings.get("agent.skillsEnabled"):
             return "'Load plugin skills' is OFF"
@@ -108,35 +117,157 @@ def list_skills() -> list[dict]:
 
 
 # ---------------------------------------------------------------- plugin skills
+def default_skills_dir() -> Path:
+    return Path(__file__).resolve().parent / "skills"
+
+
 def skills_dir() -> Path:
-    return Path(os.getenv("CRYSTAL_SKILLS_DIR") or Path(__file__).resolve().parent / "skills")
+    """backend/skills/ — nothing else is ever auto-loaded. CRYSTAL_SKILLS_DIR is ignored unless
+    CRYSTAL_ALLOW_EXTERNAL_SKILLS=1 is also set (developer escape hatch; trust checks still apply)."""
+    env = os.getenv("CRYSTAL_SKILLS_DIR")
+    if env and os.getenv("CRYSTAL_ALLOW_EXTERNAL_SKILLS") == "1":
+        log.warning("Loading skills from outside backend/skills/: %s (CRYSTAL_ALLOW_EXTERNAL_SKILLS=1)", env)
+        return Path(env)
+    if env:
+        log.warning("CRYSTAL_SKILLS_DIR is set but ignored: skills load only from %s", default_skills_dir())
+    return default_skills_dir()
 
 
 def load_skills(directory: Path | None = None) -> int:
-    """(Re)load every skills/*.py. A file may define  register(register_tool)  — see skills/_template.py."""
+    """(Re)load skill files. Returns the number of TOOLS registered by code skills.
+
+    Every file is hashed first and loads only if trusted (see skill_trust.py). `directory` is for tests and tooling;
+    the server always calls this with no argument, i.e. backend/skills/."""
     for n in [n for n, t in REGISTRY.items() if t["source"] != "builtin"]:
         del REGISTRY[n]
     SKILL_ERRORS.clear()
+    SKILL_FILES.clear()
+    INSTRUCTION_SKILLS.clear()
     d = directory or skills_dir()
     if not d.is_dir():
         return 0
     count = 0
-    for f in sorted(d.glob("*.py")):
-        if f.name.startswith("_"):
-            continue
+    policy = skill_trust.mode()
+    for rel, f, kind in skill_trust.discover(d):
+        entry = {"file": rel, "kind": kind, "path": str(f), "sha256": "", "trust": "", "loaded": False, "warning": "", "provides": []}
+        SKILL_FILES.append(entry)
         try:
-            spec = importlib.util.spec_from_file_location(f"crystal_skill_{f.stem}", f)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            before = len(REGISTRY)
-            mod.register(lambda **kw: register(source=f"skills/{f.name}", **kw))
-            count += len(REGISTRY) - before
-            log.info("Loaded skill file %s", f.name)
+            data = f.read_bytes()                      # read ONCE: the bytes we hash are the bytes we run
+        except OSError as e:
+            SKILL_ERRORS[rel] = f"{type(e).__name__}: {e}"
+            continue
+        sha = entry["sha256"] = skill_trust.digest(data)
+        status = entry["trust"] = skill_trust.check(rel, sha)
+        if status not in skill_trust.TRUSTED:
+            entry["warning"] = skill_trust.warning(kind, status)
+            if policy == "require":
+                log.warning("Skill file %s BLOCKED (%s, sha256 %s). Review it, then trust it in Settings → Tools & diagnostics.",
+                            rel, status, sha[:12])
+                continue
+            log.warning("Skill file %s is %s but loaded because 'Skill trust' is set to warn (sha256 %s)", rel, status, sha[:12])
+        try:
+            count += _load_code_skill(rel, f, data, entry) if kind == "code" else _load_instruction_skill(rel, data, entry)
+            entry["loaded"] = True
+            log.info("Loaded skill file %s (%s)", rel, status)
         except Exception as e:
-            SKILL_ERRORS[f.name] = f"{type(e).__name__}: {e}"
-            log.exception("Skill file %s failed to load", f.name)
-    log.info("Skills loaded: %d tool(s) from %s", count, d)
+            SKILL_ERRORS[rel] = f"{type(e).__name__}: {e}"
+            log.exception("Skill file %s failed to load", rel)
+    log.info("Skills loaded: %d tool(s), %d instruction skill(s) from %s", count, len(INSTRUCTION_SKILLS), d)
     return count
+
+
+def _load_code_skill(rel: str, path: Path, data: bytes, entry: dict) -> int:
+    mod = types.ModuleType(f"crystal_skill_{Path(rel).stem}")
+    mod.__file__ = str(path)
+    exec(compile(data, str(path), "exec"), mod.__dict__)      # run the exact bytes that were hashed
+    names: list[str] = []
+
+    def reg(**kw):
+        name = kw.get("name")
+        if name in REGISTRY and REGISTRY[name]["source"] == "builtin":
+            raise ValueError(f"a skill may not replace the built-in tool '{name}'")
+        register(source=f"skills/{rel}", **kw)
+        names.append(name)
+
+    mod.register(reg)
+    entry["provides"] = names
+    return len(names)
+
+
+_SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+
+
+def parse_instruction_skill(rel: str, text: str) -> dict:
+    """Markdown skill: optional  ---\nname: x\ndescription: y\n---  header, then the instructions."""
+    text = text.lstrip("\ufeff").replace("\r\n", "\n")
+    meta: dict[str, str] = {}
+    body = text
+    if text.startswith("---\n"):
+        end = text.find("\n---", 4)
+        if end != -1:
+            for line in text[4:end].splitlines():
+                if ":" in line and not line.startswith((" ", "#")):
+                    k, v = line.split(":", 1)
+                    meta[k.strip().lower()] = v.strip().strip("\"'")
+            body = text[end + 4:].split("\n", 1)[1] if "\n" in text[end + 4:] else ""
+    body = body.strip()
+    default = Path(rel).parent.name if rel.endswith("SKILL.md") else Path(rel).stem
+    name = (meta.get("name") or default).strip().lower().replace(" ", "-")
+    if not _SKILL_NAME.match(name):
+        raise ValueError(f"bad skill name '{name}' (use a-z, 0-9, '-' or '_', at most 48 characters)")
+    if not body:
+        raise ValueError("the skill has no instructions")
+    desc = meta.get("description") or next((ln.strip("# ").strip() for ln in body.splitlines() if ln.strip()), name)
+    return {"name": name, "description": " ".join(desc.split())[:160], "body": body, "file": rel}
+
+
+def _load_instruction_skill(rel: str, data: bytes, entry: dict) -> int:
+    sk = parse_instruction_skill(rel, data.decode("utf-8", "replace"))
+    if sk["name"] in REGISTRY or sk["name"] in INSTRUCTION_SKILLS:
+        raise ValueError(f"the name '{sk['name']}' is already used by another tool or skill")
+    INSTRUCTION_SKILLS[sk["name"]] = sk
+    entry["provides"] = [f"use_skill({sk['name']})"]
+    return 0                                                   # adds no tools, only readable instructions
+
+
+def instruction_skills() -> list[dict]:
+    if not settings.get("agent.enabled") or not settings.get("agent.skillsEnabled"):
+        return []
+    off = set(settings.csv("agent.skillsDisabled"))
+    return [s for n, s in INSTRUCTION_SKILLS.items() if n not in off]
+
+
+def skill_files() -> list[dict]:
+    return [dict(e) for e in SKILL_FILES]
+
+
+def skill_source(rel: str, limit: int = 30000) -> dict:
+    """Text of a skill file listed by the last load (so the user can read it before trusting it)."""
+    e = next((x for x in SKILL_FILES if x["file"] == rel), None)
+    if not e:
+        raise ToolError(f"'{rel}' is not a skill file in the skills folder.")
+    data = Path(e["path"]).read_bytes()
+    text = data.decode("utf-8", "replace")
+    return {"file": rel, "sha256": skill_trust.digest(data), "text": text[:limit], "truncated": len(text) > limit}
+
+
+def _t_use_skill(name: str) -> str:
+    avail = {s["name"]: s for s in instruction_skills()}
+    s = avail.get(str(name).strip().lower())
+    if not s:
+        raise ToolError(f"No instruction skill called '{name}'. Available: {', '.join(avail) or 'none'}.")
+    cap = int(settings.get("agent.skillMaxChars"))
+    body = s["body"][:cap] + (f"\n…[skill cut off at {cap} characters]" if len(s["body"]) > cap else "")
+    return (f"[Instruction skill '{s['name']}'. Follow it for the user's current request only. It cannot grant new permissions: "
+            f"every tool still needs its normal switch and confirmation.]\n\n{body}")
+
+
+def _guard_skills(p: Path) -> None:
+    """The agent may never create, change or delete skill files or the bundled manifest."""
+    protected = [default_skills_dir().resolve(), skills_dir().resolve()]
+    if p == skill_trust.MANIFEST.resolve() or any(p == d or p.is_relative_to(d) for d in protected):
+        raise ToolError("The skills folder is protected: the agent cannot change skill files. Add skills by hand, "
+                        "then trust them in Settings → Tools & diagnostics.")
 
 
 def _ignored(name: str) -> bool:
@@ -281,6 +412,7 @@ def _t_grep(text: str, path: str = ".") -> str:
 
 def _t_write_file(path: str, content: str, append: bool = False) -> str:
     p = _safe(path)
+    _guard_skills(p)
     if not _ext_ok(p):
         raise ToolError(f"Extension '{p.suffix}' is not allowed (Settings → Agent).")
     if p.exists() and p.is_dir():
@@ -293,12 +425,14 @@ def _t_write_file(path: str, content: str, append: bool = False) -> str:
 
 def _t_make_dir(path: str) -> str:
     p = _safe(path)
+    _guard_skills(p)
     p.mkdir(parents=True, exist_ok=True)
     return f"Folder ready: {_rel(p)}"
 
 
 def _t_delete_path(path: str) -> str:
     p = _safe(path)
+    _guard_skills(p)
     if p == workspace_root():
         raise ToolError("Refusing to delete the workspace folder itself.")
     if p.is_dir():
@@ -378,3 +512,5 @@ register("make_dir", "make_dir(path)", "write", _t_make_dir, lambda a: f"Creatin
 register("delete_path", "delete_path(path)", "delete", _t_delete_path, lambda a: f"DELETING {_a(a, 'path')}")
 register("run_command", 'run_command(command, cwd=".")   # runs one program with arguments, no pipes or &&',
          "exec", _t_run_command, lambda a: f"RUN COMMAND: {_a(a, 'command')}  (in {_a(a, 'cwd', '.')})")
+register("use_skill", "use_skill(name)   # read the full instructions of one of the Instruction skills listed above", "misc",
+         _t_use_skill, lambda a: f"Reading instruction skill {_a(a, 'name')}")

@@ -23,7 +23,7 @@
 18. [Testing](#18-testing)
 19. [Known limitations and unverified parts](#19-known-limitations-and-unverified-parts)
 20. [Roadmap](#20-roadmap)
-21. [Settings reference (all 135)](#21-settings-reference)
+21. [Settings reference (all 138)](#21-settings-reference)
 
 ---
 
@@ -215,7 +215,7 @@ crystal-agent/
 │   ├── llm.py                   Ollama streaming client; model-tier router
 │   ├── tts.py                   text cleaning, sentence splitter, Phonon engine
 │   ├── tools.py                 tool registry + permissions, sandboxed file tools, run_command, skill loader
-│   ├── skills/                  ★ drop-in plugin tools (_template.py, get_time, system_info, fetch_url)
+│   ├── skills/                  ★ drop-in plugin tools (_template.py/_template.md, get_time, system_info, fetch_url); skills_manifest.json lists bundled hashes
 │   ├── history.py               SQLite chat history (fixed: old delete bug)
 │   ├── config.py                live Settings object + logging setup
 │   └── requirements.txt
@@ -378,18 +378,39 @@ Every path argument is: stripped of quotes → joined to the workspace → symli
 With `agent.confirmWrites` on, write/delete calls pause the turn and send `confirm` to the UI. You click **Allow** or **Deny**; no answer in 90 s = deny. The model is told "The user denied this action" so it can respond sensibly.
 
 ### 9.5 Skills (plugins): how you give it new abilities
-Drop a `.py` file into `backend/skills/` → the agent learns a new tool. No core code changes.
+There are two kinds of skill file in `backend/skills/`:
 
+| | **Code skill** `*.py` | **Instruction skill** `*.md` or `<name>/SKILL.md` |
+|---|---|---|
+| What it is | Python that registers a new tool | A playbook the model reads before doing a task |
+| Risk | **Runs in the backend with your user's full privileges** | Text only, but the model will follow it (prompt-injection risk) |
+| Needs trust? | Yes | Yes |
+
+**Code skills**
 1. Copy `backend/skills/_template.py` (files starting with `_` are never loaded), rename it.
 2. Write a function that takes the model's arguments as keyword args and **returns a short string**. Raise `ToolError("clear message")` to refuse politely. Use `tools._safe(path)` for any path so the workspace sandbox still applies.
-3. In `register(register_tool)` call `register_tool(name=…, signature=…, perm=…, fn=…, describe=…)`.
-4. Settings → **Tools & diagnostics → List / reload skills** (no restart). Load errors are listed there **and** printed with a traceback in the debug console.
+3. In `register(register_tool)` call `register_tool(name=…, signature=…, perm=…, fn=…, describe=…)`. A skill may not replace a built-in tool such as `write_file`.
+4. Settings → **Tools & diagnostics → List / reload skills**, read the file (**View source**), then **Trust this skill**.
+
+**Instruction skills** (easiest way to teach it a workflow; nothing to code)
+1. Copy `backend/skills/_template.md`. Optional header: `name:` (a-z, 0-9, `-`, `_`) and `description:` (one line, ≤160 characters, shown to the model). Without a header the file name and first line are used.
+2. Write short numbered steps. The model sees only the one-line description up front and reads the full text by calling `use_skill(name)`, so a long library of skills costs almost no context. Text longer than *Max characters per instruction skill* is cut off.
+3. Reload and trust it like a code skill. An instruction skill cannot grant permissions: every tool it tells the model to use still needs its normal switch and Allow/Deny click.
 
 Choose `perm` honestly — it is the safety rail: `read`/`write`/`delete`/`exec` need a workspace folder and their Settings switch; `net` needs *Allow network access*; `misc` is for harmless things only. Write/delete/exec/net ask Allow/Deny by default. You can switch off individual skills with *Disabled skills* (Settings → Agent).
 
-Bundled examples: `get_time.py`, `system_info.py`, `fetch_url.py`, and `_template.py` (a worked `word_count` skill).
+Bundled examples: `get_time.py`, `system_info.py`, `fetch_url.py`, and the templates `_template.py` (a worked `word_count` skill) and `_template.md`.
 
-> A skill is ordinary Python running inside the backend with your user's full privileges. Only install skill files you wrote or read.
+#### Skill trust (how unreviewed skills are handled)
+Every skill file is hashed (SHA-256 of its bytes, CRLF/LF folded together) **before anything in it runs**:
+
+* **Bundled** — listed with its hash in `backend/skills_manifest.json` (skills shipped with Crystal). Changed a bundled skill yourself? Run `python scripts/update_skill_manifest.py`.
+* **Trusted by you** — you clicked *Trust this skill*; the file name and hash are stored in the setting `agent.trustedSkills`. Change **one byte** and the trust is withdrawn (status "CHANGED since trusted").
+* **Not reviewed / changed** — blocked by default. It is *not executed or read*, a warning shows in Tools & diagnostics (and in the log), and `/api/status` lists it under `skills.needs_review`.
+
+Other rules: skills load **only from `backend/skills/`** (the `CRYSTAL_SKILLS_DIR` override is ignored unless `CRYSTAL_ALLOW_EXTERNAL_SKILLS=1` is also set; symlinks pointing outside the folder are skipped; only `skills/<name>/SKILL.md` is read one level down). The hashed bytes are the bytes that are run (no re-read between check and run). The **agent itself cannot create, edit or delete files in the skills folder or the manifest** (`write_file`/`make_dir`/`delete_path` refuse), so it cannot plant a skill. *Settings → Agent → Skill trust = warn* loads everything and only flags it; use it while developing a skill, not for downloaded ones.
+
+> **Warning — a code skill is ordinary Python running inside the backend with your user's full privileges.** It can read, change or delete anything you can, run programs and use your network. Trust is a per-file, per-version opt-in that you give after reading the file; it is not a sandbox and not a signature check (it proves the file is the one you reviewed, not that it is safe). Only trust skills you wrote or read. Don't point the agent workspace at Crystal's own install folder, and never import a settings file from someone else (it could carry their `agent.trustedSkills`).
 
 ### 9.6 Running commands (`run_command`)
 Off by default. Enable: Settings → Agent → *Allow running commands*, and set a workspace folder (commands run **inside** it; `cwd` can't leave it).
@@ -467,7 +488,7 @@ Server → client
 
 ### 11.2 REST (needs `Authorization: Bearer <token>`; `/health` is open)
 
-`GET /health` · `GET /api/status` · `GET /api/models` · `GET|POST /api/settings` · `GET /api/skills` · `POST /api/skills/reload` · `GET /api/history` · `GET|DELETE /api/history/{id}` · `POST /api/test/llm` · `POST /api/test/tts` · `POST /api/test/workspace`
+`GET /health` · `GET /api/status` · `GET /api/models` · `GET|POST /api/settings` · `GET /api/skills` · `POST /api/skills/reload` · `GET /api/skills/source?file=` · `GET /api/history` · `GET|DELETE /api/history/{id}` · `POST /api/test/llm` · `POST /api/test/tts` · `POST /api/test/workspace`
 
 Run the backend alone for experiments:
 ```bash
@@ -548,7 +569,7 @@ When you're done developing: Settings → Debug → turn off *Open debug console
 | Hotkey does nothing | taken by another app | console error `Could not register hotkey`; pick another in Settings → Behavior |
 | Can't click things under transparent corners (Linux) | click-through unsupported | expected; move the ball or resize the box smaller |
 | `'x' is not on the allowed-commands list` | command policy | add the program to *Allowed commands*, or use mode `any` (read §9.6 first) |
-| My skill doesn't show up | load error or name starts with `_` | Tools → *List / reload skills* shows `✗ file.py: error`; full traceback in the console |
+| My skill doesn't show up | blocked until trusted (⚠ in Tools → *List / reload skills*), load error, or name starts with `_` | Tools → *List / reload skills* shows `✗ file.py: error`; full traceback in the console |
 | `Tool 'x' is not available` | tool disabled or no workspace | Settings → Agent: set folder, enable read/write |
 | `outside the workspace folder. Access denied.` | the sandbox working | use a path inside the folder |
 | Model chats about the file instead of creating it | tools not active, or model too small | Tools → *List / reload skills* must show write_file ● (needs a workspace folder + *Allow writing*); use mode `heavy`; check the console for `Parsed tool call:` |
@@ -632,7 +653,7 @@ Rough model sizes (4-bit quantised, approximate): ~350M ≈ 0.3–0.5 GB · Phi-
 * Pages are sandboxed with `contextIsolation` and no Node; a strict CSP only allows local scripts and `ws://127.0.0.1`.
 * **Agent file access is confined to one folder** (§9.3), read-only by default, writes/deletes confirmed by default.
 * **Commands** (§9.6) are off by default, confirmed by default, never use a shell, and run with your tokens stripped from their environment. The allow-list is not a sandbox.
-* **Skills** (§9.5) are in-process Python with your privileges; treat skill files like any code you run.
+* **Skills** (§9.5): code skills are in-process Python with your full privileges. Every skill file is hashed and loads only after you trust that exact version (bundled manifest or `agent.trustedSkills`); skills load only from `backend/skills/`; the agent cannot write there. Trust is an opt-in, not a sandbox: read a skill before you trust it.
 * **Network** (§9.7) is off by default; private addresses are blocked.
 * The Hugging Face token (if you paste it) is stored **in plain text** in `settings.json`. Prefer `hf auth login`.
 * Logs can contain your prompts and file contents (`debug.logPrompts`). Turn it off for sensitive use and don't share log files carelessly.
@@ -702,7 +723,7 @@ Self-test notes: it draws a test pattern behind the ball, injects it as the "des
 7. `getUserMedia` with `chromeMediaSource: 'desktop'` is Electron's long-standing capture route; if a future Electron removes it, switch to `setDisplayMediaRequestHandler` + `getDisplayMedia` (change confined to `startCapture()` and `capture:info`).
 8. Multi-monitor with mixed DPI: uses DIP coordinates throughout; unverified on mixed-DPI setups.
 9. No auto-update, installer signing, or bundled Python.
-10. Commands/skills are guarded by confirmation, not a true sandbox (§9.6).
+10. Commands are guarded by confirmation, not a true sandbox (§9.6). Skill trust (§9.5) stops unreviewed files from running but does not sandbox a skill you trusted, and it does not protect against an agent that already has command-execution rights on the Crystal folder.
 11. Single conversation window; history browser UI not built (REST exists).
 
 ---
@@ -875,6 +896,9 @@ Lets the model read and (optionally) change files in one folder you choose.
 | `agent.confirmNet` | Ask before network access | bool | `true` |  | Web pages can contain text that tries to give the model orders; confirmation keeps you in the loop. |
 | `agent.skillsEnabled` | Load plugin skills | bool | `true` |  | Tools from backend/skills/*.py. Reload them from Tools & diagnostics. |
 | `agent.skillsDisabled` | Disabled skills | text | `` |  | Comma-separated tool names to switch off (e.g. get_time,system_info). |
+| `agent.skillTrust` | Skill trust | select | `require` |  | require = a skill file loads only after you trust it. warn = everything loads, unreviewed files are only flagged. |
+| `agent.trustedSkills` | Trusted skills | text | `{}` |  | Managed by Tools & diagnostics. JSON of file name → SHA-256. Never import from someone else. |
+| `agent.skillMaxChars` | Max characters per instruction skill | number | `4000` | 500–20000 | Longer instruction skills are cut off when the model reads them. |
 | `agent.confirmWrites` | Ask before write/delete | bool | `true` |  | Shows Allow/Deny buttons in the dialogue box. Strongly recommended. |
 | `agent.toolMaxTokens` | Max tokens when tools are on | number | `1500` | 256 – 8192 | Writing a file puts its whole content inside the tool call, so this must be bigger than a normal reply. If file writes get cut off, raise it. |
 | `agent.maxSteps` | Max tool steps per message | number | `5` | 1 – 20 | Stops runaway loops. |
