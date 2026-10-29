@@ -226,6 +226,56 @@ def test_confirm_flag_forces_confirmation(tmp_path, warn_mode):
     tools.load_skills()
 
 
+# ------------------------------------------------------------------ open_app skill
+def _load_open_app():
+    """Load bundled skills via the real loader (trust checked against manifest)."""
+    settings.update({"agent.enabled": True, "agent.skillsEnabled": True,
+                     "agent.skillsDisabled": "", "agent.skillTrust": "require",
+                     "agent.trustedSkills": "{}"})
+    n = tools.load_skills()
+    assert "open_app" in tools.REGISTRY, f"open_app not registered ({n} tools)"
+
+
+def test_open_app_registers_with_misc_and_confirm():
+    _load_open_app()
+    t = tools.REGISTRY["open_app"]
+    assert t["perm"] == "misc" and t["confirm"] is True
+    assert t["source"] == "skills/open_app.py"
+    assert "open_app" in tools.enabled_tools()
+    assert tools.why_inactive("open_app") == ""
+    assert tools.needs_confirmation("open_app") is True
+
+
+def test_open_app_search_branches(monkeypatch):
+    import skills.open_app as m
+    opened = []
+    monkeypatch.setattr(m.webbrowser, "open", lambda url: opened.append(url))
+
+    m.open_app("open this song on youtube")
+    assert any("youtube.com/results?search_query=" in u for u in opened)
+
+    opened.clear()
+    assert "Google" in m.open_app("search for weather")
+    assert any("google.com/search?q=for+weather" in u for u in opened)
+
+
+def test_open_app_direct_url_and_errors(monkeypatch):
+    import skills.open_app as m
+    opened = []
+    monkeypatch.setattr(m.webbrowser, "open", lambda url: opened.append(url))
+
+    assert "Opened https://www.example.com" in m.open_app("www.example.com")
+    assert any(u == "https://www.example.com" for u in opened)
+
+    for bad in ("", "definitely_not_a_real_app_xyz"):
+        try:
+            m.open_app(bad)
+        except tools.ToolError:
+            pass
+        else:
+            raise AssertionError(f"expected ToolError for {bad!r}")
+
+
 # ------------------------------------------------------------------ tolerant tool-call parsing
 from agent import extract_tool_call
 

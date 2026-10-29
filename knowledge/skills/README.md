@@ -36,6 +36,7 @@ After editing a bundled skill run `python scripts/update_skill_manifest.py`.
 | `backend_status.py` | `backend_status()`, `backend_restart()` | misc | [backend/skills/backend_status.py](../backend/skills/backend_status.py) |
 | `debug_tmp.py` | `debug_test_llm(tier)`, `debug_test_tts(text)`, `debug_test_workspace()` | misc | [backend/skills/debug_tmp.py](../backend/skills/debug_tmp.py) |
 | `tools_diagnostics.py` | `tools_list_skills()`, `tools_reload_skills()`, `models_refresh()` | misc | [backend/skills/tools_diagnostics.py](../backend/skills/tools_diagnostics.py) |
+| `open_app.py` | `open_app(target)` | misc | [backend/skills/open_app.py](../backend/skills/open_app.py) |
 | `_template.py` | (template only, not loaded) | — | [backend/skills/_template.py](../backend/skills/_template.py) |
 
 ## Verification status
