@@ -25,6 +25,10 @@ None found. Every skill the docs and tests expect is implemented.
 **Status: cleared — closed 2026-10-28.** No GitHub issue filed (sandbox denies external
 writes); recorded here instead.
 
+`open_app.py` added 2026-10-29 on branch `feature/open-app-skill` (PR #17 → main):
+opens apps/files/folders/URLs and handles "open this song on youtube" / "search for weather".
+Added to `backend/skills_manifest.json` trust manifest.
+
 ## Changes made on `feature/backend-skills-complete` (2026-10-28)
 
 | Area | File(s) | What changed |
