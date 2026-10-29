@@ -135,6 +135,18 @@ class BackendManager extends EventEmitter {
 
   async restart() { await this.stop(); this.stopping = false; return this.start(); }
 
+  async transcribe(pcm, language) {
+    if (this.state !== 'ready') throw new Error(`Backend is ${this.state}`);
+    const response = await fetch(`http://127.0.0.1:${this.port}/api/stt`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/octet-stream', 'X-Speech-Language': language },
+      body: Uint8Array.from(pcm),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `Speech transcription failed (${response.status})`);
+    return data.text || '';
+  }
+
   async request(method, apiPath, body) {
     if (this.state !== 'ready') return { ok: false, status: 0, data: { error: `Backend is ${this.state}` } };
     try {

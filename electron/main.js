@@ -1,6 +1,6 @@
 'use strict';
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, globalShortcut, dialog, desktopCapturer,
-        shell, nativeImage, systemPreferences } = require('electron');
+        shell, nativeImage, systemPreferences, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const log = require('./logger');
@@ -19,7 +19,41 @@ let ballWin = null, settingsWin = null, consoleWin = null;
 // Resolves once the ball is really visible and hidden from screen capture.
 let ballShownResolve;
 const ballShown = new Promise(r => { ballShownResolve = r; });
-let quitting = false, dragStart = null, lastDisplayId = null, moveTimer = null;
+let quitting = false, dragStart = null, lastDisplayId = null, moveTimer = null, captureNotifyTimer = null;
+function notifyCaptureChanged() {
+  clearTimeout(captureNotifyTimer);
+  captureNotifyTimer = setTimeout(() => {
+    if (ballWin && !ballWin.isDestroyed()) ballWin.webContents.send('capture:display-changed');
+  }, 400);
+}
+
+// ---------------------------------------------------------------- launch sequencer
+app.whenReady().then(async () => {
+  const userData = app.getPath('userData');
+  const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'shared', 'settings-schema.json'), 'utf8'));
+  try { store = new SettingsStore(path.join(userData, 'settings.json'), schema); }
+  catch (e) { dialog.showErrorBox('Crystal: settings error', e.message); app.quit(); return; }
+
+  log.init(path.join(userData, 'logs'), { minLevel: S('debug.logLevel'), max: S('debug.maxLogEntries'), toFile: S('debug.logToFile') });
+  log.onEntry(e => broadcast('log:entry', e));
+  log.info('main', `Crystal ${app.getVersion()} · Electron ${process.versions.electron} · ${process.platform} · data: ${userData}`);
+
+  backend = new BackendManager({ root: ROOT, dataDir: userData, settings: store });
+  backend.on('state', info => {
+    broadcast('backend:state', info);
+    if (info.state === 'ready') pushSettingsToBackend();
+  });
+  setupIpc();
+  Menu.setApplicationMenu(null);
+  createBall();
+  buildTray();
+  registerHotkey();
+  app.setLoginItemSettings({ openAtLogin: S('behavior.startWithSystem') });
+  screen.on('display-metrics-changed', notifyCaptureChanged);
+  if (S('debug.showConsoleOnStart')) openSingleton('console');
+  backend.start();
+  if (process.env.CRYSTAL_SELFTEST) require('./selftest')({ BrowserWindow, ballWin, log, openWindow: openSingleton });
+});
 
 // ---------------------------------------------------------------- crash visibility
 process.on('uncaughtException', e => log.error('main', `uncaughtException: ${e.stack || e}`));
@@ -98,14 +132,14 @@ function settleGlass() {
     applyBallFlags();
     ballShownResolve();
     log.info('main', 'glass ready: window visible and hidden from screen capture');
-    if (ballWin && !ballWin.isDestroyed()) ballWin.webContents.send('capture:display-changed');
+    notifyCaptureChanged();
   }, 500);
 }
 
 function resetGlass() {
   log.info('main', 'Reset glass requested');
   applyBallFlags();
-  if (ballWin && !ballWin.isDestroyed()) ballWin.webContents.send('capture:display-changed');
+  notifyCaptureChanged();
 }
 
 function applyBallFlags() {
@@ -149,7 +183,7 @@ function onBallMove() {
     const b = ballWin.getBounds();
     store.setHidden('_x', b.x); store.setHidden('_y', b.y);
     const d = screen.getDisplayMatching(b);
-    if (d.id !== lastDisplayId) { lastDisplayId = d.id; log.info('main', `ball moved to display ${d.id}`); ballWin.webContents.send('capture:display-changed'); }
+    if (d.id !== lastDisplayId) { lastDisplayId = d.id; log.info('main', `ball moved to display ${d.id}`); notifyCaptureChanged(); }
   }, 250);
 }
 
@@ -240,6 +274,13 @@ function applySettings(changed) {
 
 // ---------------------------------------------------------------- IPC
 function setupIpc() {
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+  if (permission !== 'media') return callback(false);
+  const fromBall = ballWin && !ballWin.isDestroyed() && wc === ballWin.webContents;
+  const wantsAudio = (details.mediaTypes || []).includes('audio');
+  // audio = mic (only if voice input is on); anything else = the glass screen capture
+  callback(!!fromBall && (!wantsAudio || !!S('voice.inputEnabled')));
+});
   ipcMain.handle('settings:schema', () => store.schema);
   ipcMain.handle('settings:all', () => store.all());
   ipcMain.handle('settings:set', (_e, patch) => { const c = store.set(patch); if (c.length) applySettings(c); return c; });
@@ -257,6 +298,12 @@ function setupIpc() {
 
   ipcMain.handle('backend:info', () => backend.info());
   ipcMain.handle('backend:api', (_e, { method, path: p, body }) => backend.request(method, p, body));
+  ipcMain.handle('backend:transcribe', (_e, pcm, language) => {
+    if (!S('voice.inputEnabled') || !(Buffer.isBuffer(pcm) || pcm instanceof Uint8Array || pcm instanceof ArrayBuffer) || pcm.byteLength > 480_000) {
+      throw new Error('Voice input is disabled or the audio clip is invalid.');
+    }
+    return backend.transcribe(Buffer.from(pcm), String(language || 'en-US'));
+  });
   ipcMain.handle('backend:restart', () => backend.restart());
 
   ipcMain.on('win:ignore-mouse', (_e, ignore) => {

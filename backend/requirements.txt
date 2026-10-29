@@ -8,6 +8,9 @@ python-dotenv==1.0.1
 # --- Local Phonon TTS (heavy: torch is ~2 GB) ---
 # Gradium Phonon support currently needs Transformers from source (pinned from your original file).
 transformers @ git+https://github.com/huggingface/transformers.git@d0103c94b13730dcf8a60750a21f22397b7d75a1
+
+faster-whisper
+
 torch>=2.4.0
 accelerate>=1.0.0
 huggingface_hub>=0.25.0

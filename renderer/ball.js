@@ -6,7 +6,7 @@ let S = {};
 const $ = id => document.getElementById(id);
 const el = { video: $('screenVideo'), glass: $('glass'), hit: $('ballHit'), badge: $('badge'), panel: $('panel'),
   backdrop: $('panelBackdrop'), msgs: $('messages'), notice: $('notice'), confirm: $('confirm'),
-  confirmText: $('confirmText'), input: $('input'), form: $('composer'), stop: $('stopBtn') };
+  confirmText: $('confirmText'), input: $('input'), form: $('composer'), mic: $('micBtn'), stop: $('stopBtn') };
 
 const hex = h => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).slice(0, 12);
@@ -15,6 +15,7 @@ window.addEventListener('unhandledrejection', e => console.error(`Unhandled prom
 
 const turn = { active: false, msgEl: null, text: '', buffered: '' };
 let chatOpen = false, dragging = false, sessionId = null, errorCount = 0, hideTimer = null, pendingConfirm = null;
+let speechInput = null, speechListening = false, speechStopping = false;
 const sentHistory = []; let sentIdx = -1;
 
 // ============================================================ layout from settings
@@ -31,6 +32,9 @@ function applyLayout() {
   r.setProperty('--dark', S['chat.opacity']);
   r.setProperty('--radius', S['chat.radius'] + 'px');
   el.input.placeholder = S['chat.placeholder'];
+  el.mic.hidden = !S['voice.inputEnabled'];
+  if (!S['voice.inputEnabled'] && speechListening) stopSpeechInput();
+  if (speechInput) speechInput.language = S['voice.inputLanguage'] || 'en-US';
   renderPickers();
   resizeGL();
 }
@@ -54,7 +58,8 @@ async function startCapture() {
     console.info(`Screen capture started: display ${info.display.id}, ${el.video.videoWidth}x${el.video.videoHeight}`);
   } catch (e) {
     capture.has = false;
-    console.error(`Screen capture failed: ${e.message}. The ball falls back to plain glass. (macOS: grant Screen Recording permission.)`);
+    // Ignore AbortError from stopCapture race; treat as transient and retry on next user action
+    if (e.name !== 'AbortError') console.error(`Screen capture failed: ${e.message}. The ball falls back to plain glass. (macOS: grant Screen Recording permission.)`);
   }
 }
 function stopCapture() {
@@ -351,7 +356,7 @@ function setNotice(text, bad) { el.notice.hidden = !text; el.notice.textContent 
 function openChat() {
   chatOpen = true; el.panel.hidden = false; clearTimeout(hideTimer); el.input.focus(); scrollDown();
 }
-function closeChat() { chatOpen = false; el.panel.hidden = true; el.input.blur(); crystal.win.ignoreMouse(true); }
+function closeChat() { if (speechListening) stopSpeechInput(false); chatOpen = false; el.panel.hidden = true; el.input.blur(); crystal.win.ignoreMouse(true); }
 function toggleChat() { chatOpen ? closeChat() : openChat(); }
 function scheduleAutoHide() {
   clearTimeout(hideTimer);
@@ -384,9 +389,52 @@ mk($('effortChips'), [['auto', 'Auto'], ['fast', 'Low'], ['mid', 'Medium'], ['he
 $('provChips').hidden = provs.length < 2;
 }
 
-el.form.addEventListener('submit', e => { e.preventDefault(); const t = el.input.value; el.input.value = ''; sendChat(t); });
+el.form.addEventListener('submit', e => {
+  e.preventDefault();
+  if (speechListening) { stopSpeechInput(true); return; }
+  if (speechStopping) return;
+  const t = el.input.value; el.input.value = ''; sendChat(t);
+});
+el.mic.addEventListener('click', toggleSpeechRecognition);
 el.stop.addEventListener('click', stopEverything);
 function stopEverything() { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'stop' })); speaker.stop(); turn.active = false; el.stop.hidden = true; }
+function setListening(on, stopping = false) {
+  speechListening = on;
+  speechStopping = stopping;
+  el.mic.classList.toggle('listening', on);
+  el.mic.classList.toggle('processing', stopping);
+  el.mic.querySelector('svg path').setAttribute('d', on
+    ? 'M6 6h12v12H6z'
+    : 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11Z');
+  el.mic.setAttribute('aria-label', on ? 'Stop voice input' : stopping ? 'Transcribing voice input' : 'Start voice input');
+  el.mic.title = on ? 'Stop voice input' : stopping ? 'Transcribing voice input…' : 'Start voice input';
+  el.mic.disabled = stopping;
+}
+async function toggleSpeechRecognition() {
+  if (speechListening) { stopSpeechInput(true); return; }
+  if (speechStopping || !S['voice.inputEnabled']) return;
+  if (turn.active || speaker.busy) { addMsg('tool', 'Voice input is unavailable while Crystal is responding.'); return; }
+  if (!speechInput) speechInput = new LocalSpeechInput(text => {
+    el.input.value = [el.input.value.trim(), text].filter(Boolean).join(' ');
+    el.input.dispatchEvent(new Event('input', { bubbles: true }));
+    el.input.focus();
+    setListening(false);
+  }, error => { setListening(false); addMsg('error', `Local speech transcription failed: ${error.message}`); },
+  () => setListening(false, true));
+  speechInput.language = S['voice.inputLanguage'] || 'en-US';
+  try {
+    await speechInput.start();
+    setListening(true);
+  } catch (error) {
+    setListening(false);
+    addMsg('error', `Could not access the microphone: ${error.message}`);
+  }
+}
+function stopSpeechInput(transcribe = false) {
+  if (!speechInput || !speechListening || speechStopping) return;
+  setListening(false, true);
+  speechInput.stop(transcribe).finally(() => setListening(false));
+}
 el.input.addEventListener('keydown', e => {
   if (e.key === 'Escape') { e.preventDefault(); if (turn.active || speaker.busy) stopEverything(); else if (S['behavior.escClosesChat']) closeChat(); }
   else if (e.key === 'ArrowUp' && sentHistory.length) { e.preventDefault(); sentIdx = Math.max(0, sentIdx - 1); el.input.value = sentHistory[sentIdx] || ''; }
@@ -428,7 +476,7 @@ function ensureAssistantMsg() { if (!turn.msgEl) turn.msgEl = addMsg('assistant'
 
 function onServer(m) {
   switch (m.type) {
-    case 'turn_start': console.info(`Using ${m.tier} model: ${m.model}`); break;
+    case 'turn_start': if (speechListening) stopSpeechInput(); console.info(`Using ${m.tier} model: ${m.model}`); break;
     case 'token':
       turn.text += m.text;
       if (S['chat.streamText']) { ensureAssistantMsg().firstChild.nodeValue = turn.text; scrollDown(); }
@@ -439,8 +487,8 @@ function onServer(m) {
       break;
     case 'tool_result': if (!m.ok) addMsg('tool', 'That did not work.'); break;
     case 'confirm': pendingConfirm = m.id; el.confirmText.textContent = m.description + '?'; el.confirm.hidden = false; openChat(); break;
-    case 'audio': speaker.enqueueWav(m.wav); break;
-    case 'speak': speaker.ensure(); speaker.enqueueText(m.text); break;
+    case 'audio': if (speechListening) stopSpeechInput(); speaker.enqueueWav(m.wav); break;
+    case 'speak': if (speechListening) stopSpeechInput(); speaker.ensure(); speaker.enqueueText(m.text); break;
     case 'speech_done': if (!speaker.busy) scheduleAutoHide(); break;
     case 'info': addMsg('tool', m.message); break;
     case 'error': console.error(`[${m.where}] ${m.message}`); addMsg('error', m.message); break;
