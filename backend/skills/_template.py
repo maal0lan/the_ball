@@ -16,6 +16,10 @@ A skill file only needs a  register(register_tool)  function. Call register_tool
              deletes, restarts, sends, spends, or changes settings — even if you filed it under "misc".
   describe   optional: args -> sentence shown in the UI / confirmation card (make it specific!)
 
+TRUST: a skill file only loads after you trust it (Settings → Tools & diagnostics → "Trust this skill"). The trust
+is tied to the file's SHA-256, so editing the file withdraws it; while developing, set Settings → Agent → Skill trust = warn.
+Want to give the model instructions instead of code? Use a markdown skill: see _template.md.
+
 Rules of thumb: return small outputs (the model has a small context); never trust the arguments;
 use tools._safe(path) for any file path so the workspace sandbox still applies.
 """

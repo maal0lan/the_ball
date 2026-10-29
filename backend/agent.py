@@ -185,6 +185,9 @@ def build_system_prompt() -> str:
     root = tools.workspace_root()
     lines = "\n".join(f"  {tools.signature(t)}" for t in avail)
     extra = str(settings.get("agent.extraInstructions") or "").strip()
+    inst = tools.instruction_skills() if "use_skill" in avail else []
+    skills_block = ("Instruction skills (call use_skill(name) to read one BEFORE doing a task it covers):\n"
+                    + "\n".join(f"  - {s['name']}: {s['description']}" for s in inst) + "\n") if inst else ""
     where = f"The user's workspace folder is '{root.name}'; paths are relative to it. " if root else ""
     return (
         f"{base}\n\nYou can act on the user's computer with tools. {where}"
@@ -192,6 +195,7 @@ def build_system_prompt() -> str:
         f"{_example_call(avail)}\n"
         "Inside the JSON, write new lines as \\n and escape double quotes. One tool per reply.\n"
         f"Available tools:\n{lines}\n"
+        f"{skills_block}"
         "When the user asks you to create, save, read, list, search or run something, you MUST use the matching tool. "
         "Never paste file contents into the chat instead of saving them with a tool, and never claim you did something until a "
         "tool result confirms it. After the tool result arrives, tell the user what happened in one or two plain sentences."
