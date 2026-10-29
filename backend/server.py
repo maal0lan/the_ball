@@ -31,6 +31,7 @@ log = logging.getLogger("backend.server")
 
 import agent
 import history
+import skill_trust
 import tools
 from llm import LLMError, ollama
 from tts import phonon
@@ -84,6 +85,8 @@ async def status():
         "workspace": {"path": str(root) if root else None, "configured": settings.get("agent.workspace"), "tools": tools.enabled_tools(),
                       "inactive": {s["name"]: s["reason"] for s in tools.list_skills() if s.get("reason")}},
         "history_db": str(history._DB),
+        "skills": {"trust_mode": skill_trust.mode(),
+                   "needs_review": [e["file"] for e in tools.skill_files() if e["trust"] not in skill_trust.TRUSTED]},
     }
 
 
@@ -113,15 +116,29 @@ async def set_settings(patch: dict):
     return {"changed": changed}
 
 
+def _skills_payload(**extra) -> dict:
+    return {**extra, "dir": str(tools.skills_dir()), "trust_mode": skill_trust.mode(),
+            "skills": tools.list_skills(), "files": tools.skill_files()}
+
+
 @app.get("/api/skills", dependencies=[Depends(auth)])
 async def skills():
-    return {"dir": str(tools.skills_dir()), "skills": tools.list_skills()}
+    return _skills_payload()
 
 
 @app.post("/api/skills/reload", dependencies=[Depends(auth)])
 async def skills_reload():
     n = tools.load_skills()
-    return {"loaded_plugin_tools": n, "dir": str(tools.skills_dir()), "skills": tools.list_skills()}
+    return _skills_payload(loaded_plugin_tools=n)
+
+
+@app.get("/api/skills/source", dependencies=[Depends(auth)])
+async def skill_source(file: str):
+    """Text of one skill file from the last load, so it can be read before it is trusted. Read-only."""
+    try:
+        return tools.skill_source(file)
+    except tools.ToolError as e:
+        raise HTTPException(404, str(e))
 
 
 @app.get("/api/history", dependencies=[Depends(auth)])

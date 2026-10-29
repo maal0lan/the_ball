@@ -1,0 +1,13 @@
+{
+  "note": "SHA-256 of every skill shipped with Crystal. Regenerate with: python scripts/update_skill_manifest.py",
+  "files": {
+    "backend_status.py": "e48e96ebe2fab485bbeea27ce369ac23deefd3563d994491a22ab0faa01debdd",
+    "debug_tmp.py": "e657912bb4368e5a6b9d6890db8ea3e07d5f3719bceecb1a2b0cd7b001bec0c9",
+    "fetch_url.py": "19f4b32dd96592379402ec4d61718758b11d98cd66ac441fbb517dca863c33a4",
+    "get_time.py": "366d6aba8731ff1963ab195a56b0540ce9d3197de679bfe5031de4aff43edad6",
+    "memory_history.py": "fd849077903be897a77b79bf23d015508ccd933089cd7cfdee889cea5b3ea704",
+    "settings_read.py": "e38e6083e437ecc6a41d50e720db8544df1a6540b11548383e0ec3c01d5ab96e",
+    "system_info.py": "627a7fee8f4a892521d3f1881647040357e31360611eb1281180e7f2e8e54333",
+    "tools_diagnostics.py": "ec4875c74c2a5c5cc07799180e01cc323aa501aaf6e8e05fe58aa7e0cbb88afb"
+  }
+}

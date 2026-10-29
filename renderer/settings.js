@@ -9,7 +9,7 @@ const TOOLS = 'tools';
 function h(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) { if (k === 'class') n.className = v; else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else if (v !== false && v != null) n.setAttribute(k, v === true ? '' : v); }
-  for (const k of kids.flat()) n.append(k instanceof Node ? k : document.createTextNode(k));
+  for (const k of kids.flat()) { if (k == null || k === false) continue; n.append(k instanceof Node ? k : document.createTextNode(k)); }
   return n;
 }
 const timers = {};
@@ -137,6 +137,34 @@ function renderTools(box) {
   const say = t => { out.textContent = t; };
   const btn = (label, fn, pri) => h('button', { class: 'b' + (pri ? ' pri' : ''), onclick: async () => { say(`${label}…`); try { await fn(); } catch (e) { say(`${label} crashed: ${e.message}`); console.error(e.stack || e.message); } } }, label);
   const api = (m, p, b) => crystal.backend.api(m, p, b);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const trustMap = () => { try { const m = JSON.parse(values['agent.trustedSkills'] || '{}'); return m && typeof m === 'object' ? m : {}; } catch { return {}; } };
+  const setTrust = async m => { await crystal.settings.set({ 'agent.trustedSkills': JSON.stringify(m) }); values = await crystal.settings.all(); await sleep(500); };  // settings are pushed to the backend asynchronously
+  const reloadSkills = async () => { const r = await api('POST', '/api/skills/reload'); showSkills(r.data || {}); };
+  const showSkills = d => {
+    const files = d.files || [], errs = (d.skills || []).filter(s => s.error), tools = (d.skills || []).filter(s => !s.error);
+    const head = h('p', { style: 'white-space:pre-wrap' }, `Skills folder: ${d.dir}\nSkill trust: ${d.trust_mode}` + (d.trust_mode === 'warn' ? '  ⚠ unreviewed skills are loading anyway' : ''));
+    const rows = files.map(f => {
+      const ok = f.trust === 'builtin' || f.trust === 'trusted';
+      const state = f.trust === 'builtin' ? '✓ bundled' : f.trust === 'trusted' ? '✓ trusted by you' : f.trust === 'modified' ? '⚠ CHANGED since trusted' : '⚠ not reviewed';
+      const kind = f.kind === 'code' ? 'code (runs with your full privileges)' : 'instructions';
+      const pre = h('pre', { style: 'display:none;max-height:240px;overflow:auto;white-space:pre-wrap' });
+      const view = h('button', { class: 'b', onclick: async () => {
+        if (pre.style.display === 'none') { const r = await api('GET', '/api/skills/source?file=' + encodeURIComponent(f.file)); pre.textContent = r.data && r.data.text != null ? r.data.text + (r.data.truncated ? '\n…(truncated)' : '') : 'Could not read the file.'; pre.style.display = 'block'; } else pre.style.display = 'none'; } }, 'View source');
+      const act = ok && f.trust === 'trusted'
+        ? h('button', { class: 'b', onclick: async () => { const m = trustMap(); delete m[f.file]; await setTrust(m); await reloadSkills(); } }, 'Revoke trust')
+        : !ok ? h('button', { class: 'b pri', onclick: async () => {
+            if (!confirm(`Trust ${f.file}?\n\nsha256 ${f.sha256.slice(0, 16)}…\nKind: ${kind}\n\nOnly trust a file you wrote or have read. If the file changes even by one byte, trust is withdrawn automatically.`)) return;
+            await setTrust({ ...trustMap(), [f.file]: f.sha256 }); await reloadSkills(); } }, 'Trust this skill') : null;
+      return h('div', { class: 'row' }, h('div', { class: 'lab' }, h('b', {}, `${ok ? '' : '⚠ '}${f.file}`),
+        h('div', {}, `${state} · ${kind} · ${f.loaded ? 'loaded' : 'NOT loaded'} · sha256 ${f.sha256.slice(0, 12)}`),
+        f.warning ? h('div', {}, f.warning) : null, f.provides && f.provides.length ? h('div', {}, 'provides: ' + f.provides.join(', ')) : null, pre),
+        view, act);
+    });
+    const toolList = tools.length ? h('pre', {}, tools.map(s => `${s.active ? '●' : '○'} ${s.name}  [${s.perm}${s.confirm ? ', asks first' : ''}, ${s.source}]${s.active ? '' : '\n      ↳ inactive because: ' + s.reason}`).join('\n')) : null;
+    const errList = errs.length ? h('pre', {}, errs.map(s => `✗ ${s.name}: ${s.error}`).join('\n')) : null;
+    out.replaceChildren(head, ...rows, ...(toolList ? [toolList] : []), ...(errList ? [errList] : []));
+  };
   const actions = h('div', { class: 'actions' },
     btn('Backend status', async () => { const r = await api('GET', '/api/status'); say(JSON.stringify(r.data, null, 2)); }, true),
     btn('Test the three brains', async () => { const r = await api('POST', '/api/test/llm', {}); say(JSON.stringify(r.data, null, 2)); }),
@@ -147,7 +175,7 @@ function renderTools(box) {
       if (d.wav) new Audio('data:audio/wav;base64,' + d.wav).play(); else if (d.engine === 'system') speechSynthesis.speak(new SpeechSynthesisUtterance('Crystal voice check.'));
     }),
     btn('Check workspace folder', async () => { const r = await api('POST', '/api/test/workspace'); say(JSON.stringify(r.data, null, 2)); }),
-    btn('List / reload skills', async () => { const r = await api('POST', '/api/skills/reload'); const d = r.data || {}; say(`Skills folder: ${d.dir}\n\n` + (d.skills || []).map(s => s.error ? `✗ ${s.name}: ${s.error}` : `${s.active ? '●' : '○'} ${s.name}  [${s.perm}${s.confirm ? ', asks first' : ''}, ${s.source}]${s.active ? '' : '\n      ↳ inactive because: ' + s.reason}`).join('\n')); }),
+    btn('List / reload skills', async () => { const r = await api('POST', '/api/skills/reload'); showSkills(r.data || {}); }),
     btn('Refresh model list', async () => { const r = await api('GET', '/api/models'); modelNames = (r.data && r.data.llm_models) || []; say(modelNames.length ? 'Installed Ollama models:\n' + modelNames.join('\n') : 'No models found. Is Ollama running?'); }),
     btn('Restart backend', async () => { await crystal.backend.restart(); say('Backend restarted. Watch the Debug console.'); }),
     btn('Open debug console', () => crystal.win.openConsole()),

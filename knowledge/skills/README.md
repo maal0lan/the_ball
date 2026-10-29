@@ -17,6 +17,13 @@ Permission levels:
 
 Write/delete/exec/net ask for Allow/Deny confirmation by default.
 
+## Trust and instruction skills
+
+Skill files must be trusted before they load (bundled hashes in `backend/skills_manifest.json`, your own in the
+`agent.trustedSkills` setting). Besides Python skills there are markdown *instruction skills* (`*.md` or
+`<name>/SKILL.md`) that the model reads through `use_skill(name)`. Full details: `docs/DOCUMENTATION.md` §9.5.
+After editing a bundled skill run `python scripts/update_skill_manifest.py`.
+
 ## Skill files
 
 | Skill file | Tools registered | Perm | Source |
