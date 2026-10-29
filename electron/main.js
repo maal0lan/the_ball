@@ -249,6 +249,7 @@ function registerHotkey() {
 
 let pushTimer = null;
 function pushSettingsToBackend() {
+  if (!backend || backend.state !== 'ready') return;   // the 'ready' event pushes everything anyway
   clearTimeout(pushTimer);
   pushTimer = setTimeout(async () => {
     const r = await backend.request('POST', '/api/settings', store.all());
@@ -273,6 +274,7 @@ function applySettings(changed) {
 }
 
 // ---------------------------------------------------------------- IPC
+let ipcReady = false;
 function setupIpc() {
   session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
   if (permission !== 'media') return callback(false);
