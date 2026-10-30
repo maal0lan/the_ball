@@ -318,8 +318,10 @@ async function loadFloatData() {
   } catch (e) { wsList = []; wsActive = null; }
 }
 
-function floatBtn(label, kind, onclick) {
-  return h('button', { class: 'floatBtn ' + kind, type: 'button', title: label, onclick });
+function floatBtn(label, kind, icon, onclick) {
+  return h('button', { class: 'floatBtn ' + kind, type: 'button', title: label, onclick },
+    h('span', { class: 'ic' }, icon),
+    h('span', {}, label));
 }
 
 function modelDropdown() {
@@ -343,6 +345,7 @@ function modelDropdown() {
   }
   const tiers = h('div', { style: 'display:flex;gap:6px;' }, ['fast','mid','heavy'].map(t => {
     const b = h('button', { class: 'b', type: 'button' }, t.toUpperCase());
+    b.title = 'Force effort tier: ' + t;
     b.onclick = async () => {
       await crystal.settings.set({ 'llm.mode': t });
       values['llm.mode'] = t;
@@ -353,11 +356,14 @@ function modelDropdown() {
     return b;
   }));
   const close = h('button', { class: 'b', type: 'button', onclick: () => { floatOpen = null; renderFloat(); } }, 'Close');
+  const hint = h('div', { style: 'font-size:11px;color:var(--mute);margin-top:6px;' },
+    'M = model provider (Ollama / OpenRouter / OpenAI-compatible)   W = workspaces');
   return h('div', { class: 'floatDropdown' },
     h('div', { class: 'fdTitle' }, 'Model provider'),
     h('div', {}, ...items),
-    h('div', { style: 'margin-top:6px;' }, tiers),
-    h('div', {}, close));
+    h('div', { style: 'margin-top:8px;' }, h('b', {}, 'Effort tier'), tiers),
+    h('div', {}, close),
+    hint);
 }
 
 function workspacesDropdown() {
@@ -399,11 +405,11 @@ function renderFloat() {
   }
   panel.textContent = '';
 
-  const modelBtn = floatBtn('Model provider', 'model', async () => {
+  const modelBtn = floatBtn('Model provider', 'model', 'M', async () => {
     floatOpen = floatOpen === 'model' ? null : 'model';
     renderFloat();
   });
-  const wsBtn = floatBtn('Workspaces', 'workspace' + (wsActive ? ' activeWorkspace' : ''), async () => {
+  const wsBtn = floatBtn('Workspaces', 'workspace' + (wsActive ? ' activeWorkspace' : ''), 'W', async () => {
     floatOpen = floatOpen === 'workspaces' ? null : 'workspaces';
     renderFloat();
   });
