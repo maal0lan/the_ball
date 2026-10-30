@@ -141,6 +141,18 @@ async def skill_source(file: str):
         raise HTTPException(404, str(e))
 
 
+# ---------------------------------------------------------------- providers
+@app.get("/api/providers", dependencies=[Depends(auth)])
+async def providers_list():
+    return {
+        "providers": [
+            {"id": p.id, "name": p.name, "kind": p.kind, "models": p.models or {}}
+            for p in providers.all_providers()
+        ],
+        "active": providers.active().id,
+    }
+
+
 # ---------------------------------------------------------------- workspaces
 @app.get("/api/workspaces", dependencies=[Depends(auth)])
 async def workspaces_list():

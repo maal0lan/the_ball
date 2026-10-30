@@ -31,6 +31,31 @@ button.rst { background: none; border: 0; color: var(--mute); cursor: pointer; f
 #toolsOut { white-space: pre-wrap; background: #080c11; border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; min-height: 140px; margin-top: 14px; max-width: 880px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ---------------------------------------------------------------- floating quick actions panel */
+#floatPanel { position:fixed; left:12px; top:130px; display:flex; flex-direction:column; gap:9px; z-index:60; font-family:inherit; }
+.floatBtn { width:46px; height:46px; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); display:grid; place-items:center; font-size:20px; cursor:pointer; box-shadow:0 6px 16px rgba(0,0,0,.4); }
+.floatBtn:hover { border-color:var(--accent); transform:translateY(-1px); }
+.floatBtn.pri { background:var(--accent); color:#07211d; font-weight:800; }
+.floatBtn.pri:hover { background:#6cc0b0; }
+.floatBtn.activeWorkspace { background:var(--accent); color:#07211d; font-weight:800; box-shadow:0 0 14px var(--accent); }
+
+/* Dropdown overlays */
+.floatDropdown { position:fixed; left:70px; top:130px; min-width:300px; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); padding:10px 12px; z-index:65; display:flex; flex-direction:column; gap:8px; font-size:13px; }
+.floatDropdown.hidden { display:none; }
+.fdTitle { font-weight:800; color:var(--accent); padding-bottom:7px; border-bottom:1px solid var(--line); margin-bottom:6px; font-size:12px; letter-spacing:.6px; text-transform:uppercase; }
+.floatItem { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:9px; cursor:pointer; border:1px solid transparent; }
+.floatItem:hover { background:#1a2433; border-color:var(--line); }
+.floatItem.active { background:rgba(127,214,201,.14); border-color:var(--accent); }
+.floatItem.active .name { color:var(--accent); text-shadow:0 0 12px var(--accent); font-weight:800; }
+.floatItem .name { flex:1;min-width:0; font-size:13.5px; }
+.floatItem .path { font-size:11px; color:var(--mute); }
+.floatItem .tag { font-size:10px; padding:1px 7px; border-radius:10px; background:#1a2433; color:var(--mute); white-space:nowrap; }
+.floatRow { display:flex; gap:8px; align-items:center; padding:7px 10px; border-radius:8px; background:#0c1117; border:1px solid #141c27; }
+.floatRow b { color:var(--text); font-size:12px; min-width:64px; }
+.floatRow input[type=text] { flex:1;min-width:0; background:#080c11; border:1px solid var(--line); border-radius:6px; color:var(--text); padding:5px 8px; font-size:12px; }
+.floatRow input[type=text]:focus { border-color:var(--accent); outline:0; }
+.floatNote { font-size:11.5px; color:var(--mute); line-height:1.4; padding:6px 8px; border-radius:8px; background:#0c1117; }
+
 .prov { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .provcard { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.05); display: flex; flex-direction: column; gap: 8px; }
 .provcard input[type=text], .provcard input[type=password] { flex: 1; min-width: 0; }
