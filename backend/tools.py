@@ -4,6 +4,7 @@ the workspace folder chosen in Settings. Returns plain dicts; never raises to th
 """
 import fnmatch
 import importlib.util
+import json
 import logging
 import os
 import shlex
@@ -56,10 +57,235 @@ def workspace_root() -> Path | None:
     return p.resolve() if p.is_dir() else None
 
 
+# ---------------------------------------------------------------- workspaces
+# Named workspace definitions live in `agent.workspaces` as a JSON list of
+# {"name": str, "path": str, "permissions": {"read": bool, "write": bool,
+# "delete": bool, "exec": bool}}. `agent.workspace` keeps holding the active
+# workspace path so existing sandbox code keeps working unchanged.
+_WORKSPACE_PERMS = ("read", "write", "delete", "exec")
+
+
+def _parse_workspaces() -> list[dict]:
+    """Parse `agent.workspaces` into a list of validated workspace dicts.
+
+    Each entry: {"name": str, "path": str, "permissions": {perm: bool}}.
+    Invalid entries are skipped and logged. Duplicate names keep the first.
+    """
+    raw = settings.get("agent.workspaces") or "[]"
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        log.warning("agent.workspaces is not valid JSON; ignoring saved workspaces")
+        return []
+    if not isinstance(data, list):
+        log.warning("agent.workspaces is not a list; ignoring saved workspaces")
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name", "")).strip()
+        path = str(entry.get("path", "")).strip()
+        if not name or not path:
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            root = Path(path).expanduser()
+            if not root.is_absolute():
+                continue
+            resolved = root.resolve()
+            if not resolved.is_dir():
+                continue
+        except (OSError, ValueError):
+            continue
+        perms = entry.get("permissions") or {}
+        if not isinstance(perms, dict):
+            perms = {}
+        norm_perms = {p: bool(perms.get(p, True)) for p in _WORKSPACE_PERMS}
+        out.append({"name": name, "path": str(resolved), "permissions": norm_perms})
+    return out
+
+
+def workspaces() -> list[dict]:
+    """Return the saved workspace list (may be empty)."""
+    return _parse_workspaces()
+
+
+def workspace_names() -> list[str]:
+    """Return the names of all saved workspaces."""
+    return [w["name"] for w in _parse_workspaces()]
+
+
+def _canonical_paths() -> set[str]:
+    return {Path(w["path"]).resolve().as_posix().lower() for w in _parse_workspaces()}
+
+
+def find_workspace(name: str) -> dict | None:
+    """Return the workspace dict for `name`, or None if it does not exist."""
+    for w in _parse_workspaces():
+        if w["name"] == name:
+            return w
+    return None
+
+
+def get_active_workspace() -> dict | None:
+    """Return the active workspace dict, or None if no workspace is active."""
+    name = str(settings.get("agent.activeWorkspace") or "").strip()
+    if not name:
+        return None
+    return find_workspace(name)
+
+
+def effective_workspace_permissions(workspace: dict | None = None) -> dict[str, bool]:
+    """Effective permissions = global permission AND workspace permission.
+
+    A workspace can restrict global permissions but never bypass a global deny.
+    Missing workspace permissions inherit the corresponding global setting.
+    """
+    if workspace is None:
+        workspace = get_active_workspace()
+    perms: dict[str, bool] = {}
+    for perm in _WORKSPACE_PERMS:
+        global_on = bool(settings.get(PERM_SETTING[perm])) if PERM_SETTING[perm] else False
+        ws_on = bool(workspace.get("permissions", {}).get(perm, True)) if workspace else True
+        perms[perm] = global_on and ws_on
+    return perms
+
+
+def _validate_workspace_path(path: str) -> Path:
+    """Validate and canonicalise a workspace path. Raises ToolError on failure."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        raise ToolError("Workspace path must be absolute.")
+    try:
+        resolved = p.resolve()
+    except (OSError, ValueError) as e:
+        raise ToolError(f"Invalid workspace path: {e}")
+    if not resolved.is_dir():
+        raise ToolError(f"'{resolved}' is not an existing directory.")
+    return resolved
+
+
+def add_workspace(name: str, path: str, permissions: dict | None = None) -> dict:
+    """Add a new saved workspace. Validates name uniqueness and path.
+
+    Raises ToolError on any validation failure.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ToolError("Workspace name is required.")
+    if find_workspace(name):
+        raise ToolError(f"A workspace named '{name}' already exists.")
+    resolved = _validate_workspace_path(path)
+    canon = resolved.as_posix().lower()
+    if canon in _canonical_paths():
+        raise ToolError(f"'{resolved}' is already a saved workspace.")
+    perms = {p: bool((permissions or {}).get(p, True)) for p in _WORKSPACE_PERMS}
+    entry = {"name": name, "path": str(resolved), "permissions": perms}
+    saved = list(_parse_workspaces())
+    saved.append(entry)
+    _save_workspaces(saved)
+    return entry
+
+
+def update_workspace(name: str, **changes) -> dict:
+    """Update an existing workspace's path and/or permissions."""
+    entry = find_workspace(name)
+    if not entry:
+        raise ToolError(f"No workspace named '{name}'.")
+    new_name = (changes.get("name") or entry["name"]).strip()
+    if new_name != name and find_workspace(new_name):
+        raise ToolError(f"A workspace named '{new_name}' already exists.")
+    path = changes.get("path", entry["path"])
+    resolved = _validate_workspace_path(path)
+    # Reject canonical-path collisions with a *different* workspace.
+    canon = resolved.as_posix().lower()
+    for w in _parse_workspaces():
+        if w["name"] != name and Path(w["path"]).resolve().as_posix().lower() == canon:
+            raise ToolError(f"'{resolved}' is already a saved workspace.")
+    perms = dict(entry.get("permissions", {}))
+    if "permissions" in changes:
+        perms = {p: bool(changes["permissions"].get(p, perms.get(p, True))) for p in _WORKSPACE_PERMS}
+    saved = [_parse_workspaces()]
+    saved = [dict(w) for w in saved]
+    for i, w in enumerate(saved):
+        if w["name"] == name:
+            saved[i] = {"name": new_name, "path": str(resolved), "permissions": perms}
+            break
+    _save_workspaces(saved)
+    return saved[i]
+
+
+def remove_workspace(name: str) -> None:
+    """Remove a saved workspace. Clears the active selection if it was active."""
+    saved = _parse_workspaces()
+    kept = [w for w in saved if w["name"] != name]
+    if len(kept) == len(saved):
+        raise ToolError(f"No workspace named '{name}'.")
+    _save_workspaces(kept)
+    active = str(settings.get("agent.activeWorkspace") or "").strip()
+    if active == name:
+        settings.update({"agent.workspace": "", "agent.activeWorkspace": ""})
+
+
+def _save_workspaces(saved: list[dict]) -> None:
+    settings.update({"agent.workspaces": json.dumps(saved)})
+
+
+def switch_workspace(name: str) -> dict:
+    """Switch the active workspace to `name`.
+
+    Validates the destination, resolves effective permissions, then updates
+    `agent.workspace` (path) and `agent.activeWorkspace` (name) together.
+    Returns the active workspace dict on success. Raises ToolError on failure.
+    """
+    entry = find_workspace(name)
+    if not entry:
+        raise ToolError(f"No workspace named '{name}'.")
+    root = Path(entry["path"])
+    if not root.is_dir():
+        raise ToolError(f"Workspace path '{root}' no longer exists.")
+    # Atomic update: both settings change together or neither does.
+    settings.update({"agent.workspace": str(root), "agent.activeWorkspace": name})
+    return {"name": entry["name"], "path": str(root), "permissions": entry.get("permissions", {})}
+
+
+def _legacy_active_workspace() -> str | None:
+    """Return the legacy `agent.workspace` path if it has no saved entry yet."""
+    path = str(settings.get("agent.workspace") or "").strip()
+    if not path:
+        return None
+    try:
+        root = Path(path).expanduser().resolve()
+    except (OSError, ValueError):
+        return None
+    if root.is_dir():
+        canon = root.as_posix().lower()
+        if canon not in _canonical_paths():
+            return str(root)
+    return None
+
+
+def ensure_workspaces_loaded() -> None:
+    """Startup migration: preserve a legacy `agent.workspace` path.
+
+    If `agent.workspace` points at a real directory that isn't already a
+    saved workspace, leave it as the active workspace (do not clear it and
+    do not auto-select another saved workspace). Called by the backend at
+    startup so legacy single-workspace installs keep working.
+    """
+    _legacy_active_workspace()
+
+
 def enabled_tools() -> list[str]:
     if not settings.get("agent.enabled"):
         return []
-    has_ws = workspace_root() is not None
+    root = workspace_root()
+    has_ws = root is not None
+    perms = effective_workspace_permissions(get_active_workspace())
     off = settings.csv("agent.skillsDisabled")
     out = []
     for name, t in REGISTRY.items():
@@ -69,8 +295,8 @@ def enabled_tools() -> list[str]:
             continue
         if t["perm"] in NEEDS_WORKSPACE and not has_ws:
             continue
-        key = PERM_SETTING[t["perm"]]
-        if key and not settings.get(key):
+        key = PERM_SETTING.get(t["perm"])
+        if key and not perms.get(t["perm"], False):
             continue
         out.append(name)
     return out
@@ -92,10 +318,11 @@ def why_inactive(name: str) -> str:
         w = str(settings.get("agent.workspace") or "").strip()
         return (f"workspace folder '{w}' does not exist" if w else "NO WORKSPACE FOLDER is set (Settings → Agent → Workspace folder → Browse…)")
     key = PERM_SETTING[t["perm"]]
-    if key and not settings.get(key):
+    perms = effective_workspace_permissions(get_active_workspace())
+    if key and not perms.get(t["perm"], False):
         label = {"agent.allowRead": "Allow reading", "agent.allowWrite": "Allow writing", "agent.allowDelete": "Allow deleting",
                  "agent.allowExec": "Allow running commands", "agent.allowNet": "Allow network access"}[key]
-        return f"'{label}' is OFF (Settings → Agent)"
+        return f"'{label}' is not allowed for the active workspace (Settings → Agent)"
     return ""
 
 
