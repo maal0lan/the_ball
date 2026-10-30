@@ -5,6 +5,7 @@ window.addEventListener('unhandledrejection', e => console.error(`Unhandled reje
 
 let schema, values = {}, defaults = {}, current = 'brain', modelNames = [];
 const TOOLS = 'tools';
+const WORKSPACES = 'workspaces';
 
 function h(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
@@ -110,6 +111,7 @@ function nav() {
   const list = $('navList'); list.textContent = '';
   for (const s of schema.sections) list.append(h('button', { class: s.id === current ? 'on' : '', onclick: () => { current = s.id; $('search').value = ''; render(); } }, s.title));
   list.append(h('button', { class: current === TOOLS ? 'on' : '', onclick: () => { current = TOOLS; $('search').value = ''; render(); } }, 'Tools & diagnostics'));
+  list.append(h('button', { class: current === WORKSPACES ? 'on' : '', onclick: () => { current = WORKSPACES; $('search').value = ''; render(); } }, 'Workspaces'));
 }
 
 function render() {
@@ -124,6 +126,7 @@ function render() {
     return;
   }
   if (current === TOOLS) return renderTools(box);
+  if (current === WORKSPACES) return renderWorkspaces(box);
   const s = schema.sections.find(x => x.id === current);
   $('title').textContent = s.title; $('desc').textContent = s.description;
   for (const f of s.fields) box.append(fieldRow(f));
@@ -186,6 +189,124 @@ function renderTools(box) {
   );
   box.append(actions, out);
   crystal.app.version().then(v => out.textContent = `Crystal ${v.app} · Electron ${v.electron} · Chromium ${v.chrome} · ${v.platform}`);
+}
+
+// ---------------------------------------------------------------- workspaces UI
+async function renderWorkspaces(box) {
+  $('title').textContent = 'Workspaces';
+  $('desc').textContent = 'Named folders the agent can read/write in. Switching requires confirmation.';
+  box.textContent = '';
+
+  const out = h('div', { id: 'wsOut', style: 'white-space:pre-wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 14px; max-width: 880px;' }, 'Loading…');
+  const say = t => { out.textContent = t; };
+  box.append(out);
+
+  const refresh = async () => {
+    say('Loading…');
+    const r = await crystal.backend.api('GET', '/api/workspaces');
+    if (!r.ok) { say('Failed to load workspaces: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+    const data = r.data || {};
+    const list = data.workspaces || [];
+    const active = data.active;
+    out.textContent = '';
+
+    const activeName = active && active.name;
+
+    // Active indicator
+    if (active) {
+      box.append(h('div', { style: 'margin-bottom: 10px;' },
+        h('b', {}, 'Active: '), h('span', { style: 'color: var(--accent); margin-left: 6px;' }, active.name),
+        h('span', { style: 'color: var(--mute); margin-left: 10px; font-size: 12px;' }, '→ ' + active.path)));
+    } else {
+      box.append(h('div', { style: 'margin-bottom: 10px; color: var(--mute);' },
+        h('b', {}, 'Active: '), h('span', { style: 'color: var(--bad);' }, '(no workspace selected)')));
+    }
+
+    // List
+    const ul = h('div', { style: 'display:flex;flex-direction:column;gap:8px;' });
+    if (!list.length) {
+      ul.append(h('p', { style: 'color: var(--mute); margin: 8px 0;' }, 'No saved workspaces yet. Add one below.'));
+    }
+    for (const w of list) {
+      const perms = w.permissions || {};
+      const permBadge = (p) => {
+        const on = !!perms[p];
+        return h('span', { style: 'font-size:11px;padding:2px 8px;border-radius:10px;background:' + (on ? 'var(--accent)' : '#263447') + ';color:' + (on ? '#07211d' : 'var(--mute)') + ';' }, p[0].toUpperCase());
+      };
+      const isActive = w.name === activeName;
+      const row = h('div', { style: 'border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;background:' + (isActive ? 'rgba(127,214,201,.12)' : 'transparent') + ';' });
+      row.append(
+        h('div', { style: 'flex:1;min-width:0;' },
+          h('div', { style: 'font-weight:600;' }, w.name),
+          h('div', { style: 'color: var(--mute); font-size: 12px; word-break:break-all;' }, w.path)),
+        h('div', { style: 'display:flex;gap:6px;' }, permBadge('read'), permBadge('write'), permBadge('delete'), permBadge('exec')),
+        h('div', { style: 'display:flex;gap:6px;' },
+          h('button', { class: 'b', type: 'button', onclick: async () => {
+            const ok = confirm(`Switch to workspace “${w.name}”?\n\n${w.path}\n\nThis changes the folder the agent can access.`);
+            if (!ok) return;
+            const r = await crystal.backend.api('POST', '/api/workspaces/switch', { name: w.name });
+            if (!r.ok) { say('Switch failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+            await crystal.settings.set({ 'agent.workspace': r.data.active.path, 'agent.activeWorkspace': w.name });
+            await crystal.settings.all(); // refresh values
+            say('Switched to “' + w.name + '”.');
+            refresh();
+          } }, isActive ? 'Active' : 'Switch'),
+          h('button', { class: 'b', type: 'button', onclick: async () => {
+            const np = prompt('New path for “' + w.name + '”: ', w.path);
+            if (np == null) return;
+            const r = await crystal.backend.api('POST', '/api/workspaces/' + encodeURIComponent(w.name), { path: np });
+            if (!r.ok) { say('Update failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+            say('Updated “' + w.name + '”.');
+            refresh();
+          } }, 'Edit path'),
+          h('button', { class: 'b', type: 'button', onclick: async () => {
+            const ok = confirm(`Remove workspace “${w.name}”?`);
+            if (!ok) return;
+            const r = await crystal.backend.api('DELETE', '/api/workspaces/' + encodeURIComponent(w.name));
+            if (!r.ok) { say('Remove failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+            say('Removed “' + w.name + '”.');
+            refresh();
+          } }, 'Remove'))
+      );
+      ul.append(row);
+    }
+    box.append(ul);
+
+    // Add workspace form
+    const addBox = h('div', { style: 'border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px;background: var(--panel);' });
+    addBox.append(h('b', { style: 'display:block;margin-bottom:8px;' }, 'Add workspace'));
+    const nameI = h('input', { type: 'text', placeholder: 'Name (e.g. notes)', style: 'width: min(260px,100%);' });
+    const pathI = h('input', { type: 'text', placeholder: 'Folder path', style: 'flex:1;min-width:0;' });
+    const browse = h('button', { class: 'b', type: 'button', onclick: async () => {
+      const p = await crystal.app.chooseFolder();
+      if (p) pathI.value = p;
+    } }, 'Browse…');
+    const permRow = h('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;' });
+    const permInputs = {};
+    for (const p of ['read', 'write', 'delete', 'exec']) {
+      const cb = h('input', { type: 'checkbox' });
+      cb.checked = true;
+      permRow.append(h('label', { class: 'sw' }, cb, h('span', {}, p)));
+      permInputs[p] = cb;
+    }
+    permRow.append(h('span', { style: 'color: var(--mute); font-size: 12px; margin-left: 8px;' }, 'permissions (unchecked = restricted)'));
+    const addBtn = h('button', { class: 'b pri', type: 'button', onclick: async () => {
+      const name = nameI.value.trim();
+      const path = pathI.value.trim();
+      if (!name || !path) { say('Name and path are required.'); return; }
+      const perms = {};
+      for (const p of ['read', 'write', 'delete', 'exec']) perms[p] = permInputs[p].checked;
+      const r = await crystal.backend.api('POST', '/api/workspaces', { name, path, permissions: perms });
+      if (!r.ok) { say('Add failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+      say('Added “' + name + '”.');
+      nameI.value = ''; pathI.value = '';
+      refresh();
+    } }, 'Add');
+    addBox.append(h('div', { style: 'display:flex;gap:8px;align-items:flex-start;' }, nameI, h('div', { style: 'display:flex;gap:8px;' }, pathI, browse)), permRow, addBtn);
+    box.append(addBox);
+  };
+
+  await refresh();
 }
 
 (async function boot() {

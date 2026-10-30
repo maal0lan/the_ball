@@ -978,6 +978,20 @@
      "help": "The ONLY folder the agent can touch. Nothing outside it is reachable."
     },
     {
+     "key": "agent.activeWorkspace",
+     "label": "Active workspace",
+     "type": "text",
+     "default": "",
+     "help": "Name of the currently active saved workspace. Managed by Settings → Agent → Workspaces."
+    },
+    {
+     "key": "agent.workspaces",
+     "label": "Saved workspaces",
+     "type": "text",
+     "default": "[]",
+     "help": "Saved named workspaces (JSON). Managed by Settings → Agent → Workspaces — do not edit by hand."
+    },
+    {
      "key": "agent.allowRead",
      "label": "Allow reading",
      "type": "bool",

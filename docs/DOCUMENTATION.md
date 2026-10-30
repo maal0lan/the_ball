@@ -426,6 +426,15 @@ Layers of protection, outermost first:
 
 Windows note: `dir`, `type`, `echo`, `ver`, `where` are cmd built-ins; the tool routes them through `cmd /c` automatically.
 
+### 9.6.1 Named workspaces and switching
+You can save several named workspace folders (Settings → Agent → Workspaces) and switch the agent between them without restarting. Each workspace gets its own path and its own read/write/delete/exec permission toggles.
+
+- **Switching requires confirmation** — a dialog shows the destination name and full path before anything changes. Cancelling leaves the current workspace untouched.
+- **Permission rule:** effective permission = global permission AND workspace permission. A workspace can *restrict* what's allowed globally, but never bypass a global deny (e.g. if "Allow writing" is off globally, no workspace can enable writing).
+- **Legacy compatibility:** if you already have `agent.workspace` set, that path keeps working as an unnamed active workspace. It is not cleared or auto-replaced.
+
+API: `GET /api/workspaces`, `POST /api/workspaces`, `POST /api/workspaces/switch`, `POST /api/workspaces/{name}`, `DELETE /api/workspaces/{name}`. All require the same auth as the rest of the API.
+
 ### 9.7 Network (`fetch_url`)
 Off by default (*Allow network access*), confirmation on by default. Only `http(s)`, no redirects followed automatically, 1 MB / 15 s limits, and **loopback, private-network and link-local addresses are blocked** so a page or prompt cannot aim the agent at your LAN or at this app's own backend. Web pages can contain text that tries to give the model orders (prompt injection); that is why confirmation defaults on.
 
@@ -882,6 +891,8 @@ Lets the model read and (optionally) change files in one folder you choose.
 |---|---|---|---|---|---|
 | `agent.enabled` | Enable file tools | bool | `true` |  | If off, the assistant is chat-only. |
 | `agent.workspace` | Workspace folder | folder | `` |  | The ONLY folder the agent can touch. Nothing outside it is reachable. |
+| `agent.activeWorkspace` | Active workspace | text | `` |  | Name of the currently active saved workspace. Managed by Settings → Agent → Workspaces. |
+| `agent.workspaces` | Saved workspaces | text | `[]` |  | Saved named workspaces (JSON). Managed by Settings → Agent → Workspaces — do not edit by hand. |
 | `agent.allowRead` | Allow reading | bool | `true` |  | list_dir, read_file, search_files, grep. |
 | `agent.allowWrite` | Allow writing | bool | `false` |  | write_file, make_dir. |
 | `agent.allowDelete` | Allow deleting | bool | `false` |  | delete_path (moves nothing to trash — permanent). |

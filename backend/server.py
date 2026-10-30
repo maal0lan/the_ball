@@ -141,6 +141,59 @@ async def skill_source(file: str):
         raise HTTPException(404, str(e))
 
 
+# ---------------------------------------------------------------- workspaces
+@app.get("/api/workspaces", dependencies=[Depends(auth)])
+async def workspaces_list():
+    active = tools.get_active_workspace()
+    return {
+        "workspaces": tools.workspaces(),
+        "active": {
+            "name": active["name"] if active else None,
+            "path": active["path"] if active else None,
+        } if active else None,
+    }
+
+
+@app.post("/api/workspaces", dependencies=[Depends(auth)])
+async def workspaces_add(body: dict):
+    name = str(body.get("name") or "").strip()
+    path = str(body.get("path") or "").strip()
+    permissions = body.get("permissions") if isinstance(body.get("permissions"), dict) else None
+    try:
+        entry = tools.add_workspace(name, path, permissions)
+    except tools.ToolError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "workspace": entry}
+
+
+@app.post("/api/workspaces/switch", dependencies=[Depends(auth)])
+async def workspaces_switch(body: dict):
+    name = str(body.get("name") or "").strip()
+    try:
+        entry = tools.switch_workspace(name)
+    except tools.ToolError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "active": entry}
+
+
+@app.post("/api/workspaces/{name}", dependencies=[Depends(auth)])
+async def workspaces_update(name: str, body: dict):
+    try:
+        entry = tools.update_workspace(name, **body)
+    except tools.ToolError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "workspace": entry}
+
+
+@app.delete("/api/workspaces/{name}", dependencies=[Depends(auth)])
+async def workspaces_remove(name: str):
+    try:
+        tools.remove_workspace(name)
+    except tools.ToolError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
 @app.get("/api/history", dependencies=[Depends(auth)])
 async def sessions():
     return {"sessions": history.get_sessions(), "latest": history.latest_session_id()}
