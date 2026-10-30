@@ -31,6 +31,7 @@ log = logging.getLogger("backend.server")
 
 import agent
 import history
+import providers
 import skill_trust
 import tools
 from llm import LLMError, ollama

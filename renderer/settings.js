@@ -348,8 +348,6 @@ async function renderWorkspaces(box) {
   for (const s of schema.sections) for (const f of s.fields) defaults[f.key] = f.default;
   const r = await crystal.backend.api('GET', '/api/models'); modelNames = (r.data && r.data.llm_models) || [];
   crystal.backend.onState(async info => { if (info.state === 'ready') { const m = await crystal.backend.api('GET', '/api/models'); modelNames = (m.data && m.data.llm_models) || []; } });
-  await loadFloatData();
-  renderFloat();
   $('search').addEventListener('input', render);
   render();
 })();
