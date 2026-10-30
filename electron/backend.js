@@ -70,6 +70,12 @@ class BackendManager extends EventEmitter {
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       PYTHONUTF8: '1',
+      // OpenBLAS (used by numpy/torch) can fail with "Memory allocation still
+      // failed after N retries" on constrained systems. Cap threads to reduce
+      // its per-process memory footprint.
+      OPENBLAS_NUM_THREADS: '1',
+      OMP_NUM_THREADS: '1',
+      MKL_NUM_THREADS: '1',
     };
     const hf = this.settings.get('voice.hfToken');
     if (hf) env.HF_TOKEN = hf;
