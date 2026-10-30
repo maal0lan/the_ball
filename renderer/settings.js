@@ -192,6 +192,114 @@ function renderTools(box) {
 }
 
 // ---------------------------------------------------------------- workspaces UI
+function wsBadge(label, on) {
+  return h('span', {
+    style: 'font-size:11px;padding:2px 8px;border-radius:10px;' +
+           'background:' + (on ? 'var(--accent)' : '#263447') + ';' +
+           'color:' + (on ? '#07211d' : 'var(--mute)') + ';'
+  }, label[0].toUpperCase());
+}
+
+function wsPermBadges(perms) {
+  perms = perms || {};
+  return h('div', { style: 'display:flex;gap:6px;' },
+    wsBadge('read', !!perms.read),
+    wsBadge('write', !!perms.write),
+    wsBadge('delete', !!perms.delete),
+    wsBadge('exec', !!perms.exec));
+}
+
+function wsActionButtons(w, isActive, say, refresh) {
+  const switchBtn = h('button', { class: 'b', type: 'button' }, isActive ? 'Active' : 'Switch');
+  switchBtn.onclick = async () => {
+    const ok = confirm(`Switch to workspace “${w.name}”?\n\n${w.path}\n\nThis changes the folder the agent can access.`);
+    if (!ok) return;
+    const r = await crystal.backend.api('POST', '/api/workspaces/switch', { name: w.name });
+    if (!r.ok) { say('Switch failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+    await crystal.settings.set({ 'agent.workspace': r.data.active.path, 'agent.activeWorkspace': w.name });
+    await crystal.settings.all();
+    say('Switched to “' + w.name + '”.');
+    refresh();
+  };
+
+  const editBtn = h('button', { class: 'b', type: 'button' }, 'Edit path');
+  editBtn.onclick = async () => {
+    const np = prompt('New path for “' + w.name + '”: ', w.path);
+    if (np == null) return;
+    const r = await crystal.backend.api('POST', '/api/workspaces/' + encodeURIComponent(w.name), { path: np });
+    if (!r.ok) { say('Update failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+    say('Updated “' + w.name + '”.');
+    refresh();
+  };
+
+  const removeBtn = h('button', { class: 'b', type: 'button' }, 'Remove');
+  removeBtn.onclick = async () => {
+    const ok = confirm(`Remove workspace “${w.name}”?`);
+    if (!ok) return;
+    const r = await crystal.backend.api('DELETE', '/api/workspaces/' + encodeURIComponent(w.name));
+    if (!r.ok) { say('Remove failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+    say('Removed “' + w.name + '”.');
+    refresh();
+  };
+
+  return h('div', { style: 'display:flex;gap:6px;' }, switchBtn, editBtn, removeBtn);
+}
+
+function wsRow(w, activeName, say, refresh) {
+  const perms = w.permissions || {};
+  const isActive = w.name === activeName;
+  const meta = h('div', { style: 'flex:1;min-width:0;' },
+    h('div', { style: 'font-weight:600;' }, w.name),
+    h('div', { style: 'color: var(--mute); font-size: 12px; word-break:break-all;' }, w.path));
+  const row = h('div', {
+    style: 'border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;' +
+           'background:' + (isActive ? 'rgba(127,214,201,.12)' : 'transparent') + ';'
+  });
+  row.append(meta, wsPermBadges(perms), wsActionButtons(w, isActive, say, refresh));
+  return row;
+}
+
+function wsAddForm(say, refresh) {
+  const addBox = h('div', {
+    style: 'border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px;background: var(--panel);'
+  });
+  addBox.append(h('b', { style: 'display:block;margin-bottom:8px;' }, 'Add workspace'));
+  const nameI = h('input', { type: 'text', placeholder: 'Name (e.g. notes)', style: 'width: min(260px,100%);' });
+  const pathI = h('input', { type: 'text', placeholder: 'Folder path', style: 'flex:1;min-width:0;' });
+  const browse = h('button', { class: 'b', type: 'button' }, 'Browse…');
+  browse.onclick = async () => {
+    const p = await crystal.app.chooseFolder();
+    if (p) pathI.value = p;
+  };
+  const permRow = h('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;' });
+  const permInputs = {};
+  for (const p of ['read', 'write', 'delete', 'exec']) {
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = true;
+    permRow.append(h('label', { class: 'sw' }, cb, h('span', {}, p)));
+    permInputs[p] = cb;
+  }
+  permRow.append(h('span', { style: 'color: var(--mute); font-size: 12px; margin-left: 8px;' }, 'permissions (unchecked = restricted)'));
+  const addBtn = h('button', { class: 'b pri', type: 'button' }, 'Add');
+  addBtn.onclick = async () => {
+    const name = nameI.value.trim();
+    const path = pathI.value.trim();
+    if (!name || !path) { say('Name and path are required.'); return; }
+    const perms = {};
+    for (const p of ['read', 'write', 'delete', 'exec']) perms[p] = permInputs[p].checked;
+    const r = await crystal.backend.api('POST', '/api/workspaces', { name, path, permissions: perms });
+    if (!r.ok) { say('Add failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+    say('Added “' + name + '”.');
+    nameI.value = ''; pathI.value = '';
+    refresh();
+  };
+  addBox.append(
+    h('div', { style: 'display:flex;gap:8px;align-items:flex-start;' }, nameI,
+      h('div', { style: 'display:flex;gap:8px;' }, pathI, browse)),
+    permRow, addBtn);
+  return addBox;
+}
+
 async function renderWorkspaces(box) {
   $('title').textContent = 'Workspaces';
   $('desc').textContent = 'Named folders the agent can read/write in. Switching requires confirmation.';
@@ -212,7 +320,6 @@ async function renderWorkspaces(box) {
 
     const activeName = active && active.name;
 
-    // Active indicator
     if (active) {
       box.append(h('div', { style: 'margin-bottom: 10px;' },
         h('b', {}, 'Active: '), h('span', { style: 'color: var(--accent); margin-left: 6px;' }, active.name),
@@ -222,88 +329,13 @@ async function renderWorkspaces(box) {
         h('b', {}, 'Active: '), h('span', { style: 'color: var(--bad);' }, '(no workspace selected)')));
     }
 
-    // List
     const ul = h('div', { style: 'display:flex;flex-direction:column;gap:8px;' });
     if (!list.length) {
       ul.append(h('p', { style: 'color: var(--mute); margin: 8px 0;' }, 'No saved workspaces yet. Add one below.'));
     }
-    for (const w of list) {
-      const perms = w.permissions || {};
-      const permBadge = (p) => {
-        const on = !!perms[p];
-        return h('span', { style: 'font-size:11px;padding:2px 8px;border-radius:10px;background:' + (on ? 'var(--accent)' : '#263447') + ';color:' + (on ? '#07211d' : 'var(--mute)') + ';' }, p[0].toUpperCase());
-      };
-      const isActive = w.name === activeName;
-      const row = h('div', { style: 'border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;background:' + (isActive ? 'rgba(127,214,201,.12)' : 'transparent') + ';' });
-      row.append(
-        h('div', { style: 'flex:1;min-width:0;' },
-          h('div', { style: 'font-weight:600;' }, w.name),
-          h('div', { style: 'color: var(--mute); font-size: 12px; word-break:break-all;' }, w.path)),
-        h('div', { style: 'display:flex;gap:6px;' }, permBadge('read'), permBadge('write'), permBadge('delete'), permBadge('exec')),
-        h('div', { style: 'display:flex;gap:6px;' },
-          h('button', { class: 'b', type: 'button', onclick: async () => {
-            const ok = confirm(`Switch to workspace “${w.name}”?\n\n${w.path}\n\nThis changes the folder the agent can access.`);
-            if (!ok) return;
-            const r = await crystal.backend.api('POST', '/api/workspaces/switch', { name: w.name });
-            if (!r.ok) { say('Switch failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-            await crystal.settings.set({ 'agent.workspace': r.data.active.path, 'agent.activeWorkspace': w.name });
-            await crystal.settings.all(); // refresh values
-            say('Switched to “' + w.name + '”.');
-            refresh();
-          } }, isActive ? 'Active' : 'Switch'),
-          h('button', { class: 'b', type: 'button', onclick: async () => {
-            const np = prompt('New path for “' + w.name + '”: ', w.path);
-            if (np == null) return;
-            const r = await crystal.backend.api('POST', '/api/workspaces/' + encodeURIComponent(w.name), { path: np });
-            if (!r.ok) { say('Update failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-            say('Updated “' + w.name + '”.');
-            refresh();
-          } }, 'Edit path'),
-          h('button', { class: 'b', type: 'button', onclick: async () => {
-            const ok = confirm(`Remove workspace “${w.name}”?`);
-            if (!ok) return;
-            const r = await crystal.backend.api('DELETE', '/api/workspaces/' + encodeURIComponent(w.name));
-            if (!r.ok) { say('Remove failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-            say('Removed “' + w.name + '”.');
-            refresh();
-          } }, 'Remove'))
-      );
-      ul.append(row);
-    }
+    for (const w of list) ul.append(wsRow(w, activeName, say, refresh));
     box.append(ul);
-
-    // Add workspace form
-    const addBox = h('div', { style: 'border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px;background: var(--panel);' });
-    addBox.append(h('b', { style: 'display:block;margin-bottom:8px;' }, 'Add workspace'));
-    const nameI = h('input', { type: 'text', placeholder: 'Name (e.g. notes)', style: 'width: min(260px,100%);' });
-    const pathI = h('input', { type: 'text', placeholder: 'Folder path', style: 'flex:1;min-width:0;' });
-    const browse = h('button', { class: 'b', type: 'button', onclick: async () => {
-      const p = await crystal.app.chooseFolder();
-      if (p) pathI.value = p;
-    } }, 'Browse…');
-    const permRow = h('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;' });
-    const permInputs = {};
-    for (const p of ['read', 'write', 'delete', 'exec']) {
-      const cb = h('input', { type: 'checkbox' });
-      cb.checked = true;
-      permRow.append(h('label', { class: 'sw' }, cb, h('span', {}, p)));
-      permInputs[p] = cb;
-    }
-    permRow.append(h('span', { style: 'color: var(--mute); font-size: 12px; margin-left: 8px;' }, 'permissions (unchecked = restricted)'));
-    const addBtn = h('button', { class: 'b pri', type: 'button', onclick: async () => {
-      const name = nameI.value.trim();
-      const path = pathI.value.trim();
-      if (!name || !path) { say('Name and path are required.'); return; }
-      const perms = {};
-      for (const p of ['read', 'write', 'delete', 'exec']) perms[p] = permInputs[p].checked;
-      const r = await crystal.backend.api('POST', '/api/workspaces', { name, path, permissions: perms });
-      if (!r.ok) { say('Add failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-      say('Added “' + name + '”.');
-      nameI.value = ''; pathI.value = '';
-      refresh();
-    } }, 'Add');
-    addBox.append(h('div', { style: 'display:flex;gap:8px;align-items:flex-start;' }, nameI, h('div', { style: 'display:flex;gap:8px;' }, pathI, browse)), permRow, addBtn);
-    box.append(addBox);
+    box.append(wsAddForm(say, refresh));
   };
 
   await refresh();
