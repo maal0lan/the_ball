@@ -44,6 +44,20 @@ Added to `backend/skills_manifest.json` trust manifest.
 | Docs | `docs/DOCUMENTATION.md` | §9.2 call format explains the forgiving parser + token budget; settings reference now 135 settings; new troubleshooting rows for cut-off calls and models chatting about files instead of creating them. |
 | Tests | `tests/test_backend.py`, `tests/e2e_mock.py` | New tests: `why_inactive` reasons, `confirm` flag forces confirmation, all real model formats recognised (parametrised), prose kept + call hidden, normal code block released, non-tool JSON is just text, cut-off call flagged suspect, bare tool name resolves, unknown tool error lists available tools, prompt without workspace doesn't crash. E2E now covers Mistral-style broken format + cut-off call → file really created on disk, and raw tool calls never leak into chat/TTS. |
 
+## Issue #6 — Multi-workspace / project switching — RESOLVED
+
+All work is merged to `main`:
+
+| Phase | What | Where | Status |
+|-------|------|-------|--------|
+| Phase 2 | Multi-workspace backend model | `backend/tools.py` (workspaces, switch, permissions) | ✅ merged (dff4792) |
+| Phases 3-5 | API endpoints, Settings UI, docs, tests | `backend/server.py`, `renderer/settings.js`, `docs/DOCUMENTATION.md`, `tests/test_backend.py` | ✅ merged (6d57738) |
+| UI refactor | Floating model-provider + workspace buttons on ball UI | `renderer/ball.html`, `renderer/ball.css`, `renderer/ball.js`, `backend/server.py` (`/api/providers`) | ✅ merged (0f2391c) |
+
+Verification: backend suite 65 passed / 4 pre-existing unrelated Windows failures / 2 skipped (unchanged from baseline). All 13 workspace tests pass.
+
+**Still open on GitHub as issue #6** — sandbox denies `gh issue close`, so close it manually on `github.com/maal0lan/the_ball` when you have access.
+
 ## Future skills (tracked here, not filed as GitHub issues — sandbox denies external writes)
 
 - Speech-to-text / voice-in (docs §14.5)

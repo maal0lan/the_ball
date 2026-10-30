@@ -13,3 +13,5 @@ out/
 
 git_diff/
 *.patch
+.freebuff
+.claude
