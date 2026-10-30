@@ -68,4 +68,27 @@ button:hover { background: rgba(255,255,255,.2); }
   border-radius: 999px; padding: 10px 16px; user-select: text; }
 #input:focus { background: rgba(255,255,255,.14); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 #input::placeholder { color: var(--user); opacity: .7; }
+
+/* Floating quick-action buttons beside the chat dialog */
+#floatPanel { position:absolute; left:14px; top:calc(var(--ball) + var(--margin) + 14px); display:flex; flex-direction:column; gap:10px; z-index:50; pointer-events:auto; font-family:var(--font); font-size:13px; }
+#floatPanel.hidden, #floatPanel[hidden] { display:none; }
+.floatBtn { display:flex; align-items:center; gap:8px; height:42px; padding:0 12px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.09); color:var(--reply); font-weight:700; cursor:pointer; box-shadow:0 6px 16px rgba(0,0,0,.45); white-space:nowrap; }
+.floatBtn .ic { width:20px; height:20px; border-radius:6px; border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.35); display:grid; place-items:center; font-size:12px; flex:0; }
+.floatBtn:hover { border-color:var(--accent); background:rgba(127,214,201,.14); color:#07211d; transform:translateY(-1px); }
+.floatBtn.activeWorkspace { background:var(--accent); color:#07211d; border-color:var(--accent); box-shadow:0 0 16px var(--accent); font-weight:800; }
+.floatBtn.activeWorkspace .ic { border-color:var(--accent); }
+.floatMenu { position:absolute; left:70px; top:0; min-width:260px; background:rgba(18,25,35,.95); border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.55); padding:10px 12px; z-index:55; display:flex; flex-direction:column; gap:8px; font-size:13px; pointer-events:auto; }
+.fdTitle { font-weight:800; color:var(--accent); padding-bottom:7px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:6px; font-size:11px; letter-spacing:.6px; text-transform:uppercase; }
+.floatItem { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:9px; cursor:pointer; border:1px solid transparent; }
+.floatItem:hover { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.12); }
+.floatItem.active { background:rgba(127,214,201,.14); border-color:var(--accent); }
+.floatItem.active .name { color:var(--accent); font-weight:800; }
+.floatItem .name { flex:1;min-width:0; font-size:13.5px; }
+.floatItem .path { font-size:11px; color:var(--user); opacity:.8; }
+.floatItem .tag { font-size:10px; padding:1px 7px; border-radius:10px; background:rgba(255,255,255,.08); color:var(--user); white-space:nowrap; }
+.floatRow { display:flex; gap:8px; align-items:center; padding:7px 10px; border-radius:8px; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.08); }
+.floatRow b { color:var(--reply); font-size:12px; min-width:64px; }
+.floatRow input[type=text] { flex:1;min-width:0; background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.12); border-radius:6px; color:var(--reply); padding:5px 8px; font-size:12px; }
+.floatRow input[type=text]:focus { border-color:var(--accent); outline:0; }
+.floatToast { position:fixed; left:14px; top:calc(var(--ball) + var(--margin) + 14px + 110px); background:rgba(18,25,35,.95); border:1px solid rgba(255,255,255,.12); border-radius:8px; padding:8px 12px; color:var(--accent); font-size:12px; z-index:55; pointer-events:none; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

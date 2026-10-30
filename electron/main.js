@@ -276,6 +276,8 @@ function applySettings(changed) {
 // ---------------------------------------------------------------- IPC
 let ipcReady = false;
 function setupIpc() {
+  if (ipcReady) return;
+  ipcReady = true;
   session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
   if (permission !== 'media') return callback(false);
   const fromBall = ballWin && !ballWin.isDestroyed() && wc === ballWin.webContents;

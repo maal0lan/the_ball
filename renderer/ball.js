@@ -6,7 +6,9 @@ let S = {};
 const $ = id => document.getElementById(id);
 const el = { video: $('screenVideo'), glass: $('glass'), hit: $('ballHit'), badge: $('badge'), panel: $('panel'),
   backdrop: $('panelBackdrop'), msgs: $('messages'), notice: $('notice'), confirm: $('confirm'),
-  confirmText: $('confirmText'), input: $('input'), form: $('composer'), mic: $('micBtn'), stop: $('stopBtn') };
+  confirmText: $('confirmText'), input: $('input'), form: $('composer'), mic: $('micBtn'), stop: $('stopBtn'),
+  floatPanel: $('floatPanel'), floatModel: $('floatModel'), floatWorkspace: $('floatWorkspace'),
+  floatMenu: $('floatMenu'), floatToast: $('floatToast') };
 
 const hex = h => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).slice(0, 12);
@@ -354,9 +356,9 @@ function addMsg(kind, text, meta) {
 function setNotice(text, bad) { el.notice.hidden = !text; el.notice.textContent = text || ''; el.notice.classList.toggle('bad', !!bad); }
 
 function openChat() {
-  chatOpen = true; el.panel.hidden = false; clearTimeout(hideTimer); el.input.focus(); scrollDown();
+  chatOpen = true; el.panel.hidden = false; el.floatPanel.hidden = false; fLoad(); clearTimeout(hideTimer); el.input.focus(); scrollDown();
 }
-function closeChat() { if (speechListening) stopSpeechInput(false); chatOpen = false; el.panel.hidden = true; el.input.blur(); crystal.win.ignoreMouse(true); }
+function closeChat() { if (speechListening) stopSpeechInput(false); chatOpen = false; el.panel.hidden = true; el.floatPanel.hidden = true; fClose(); el.input.blur(); crystal.win.ignoreMouse(true); }
 function toggleChat() { chatOpen ? closeChat() : openChat(); }
 function scheduleAutoHide() {
   clearTimeout(hideTimer);
@@ -388,6 +390,112 @@ mk($('provChips'), provs.map(p => [p.id, p.name]), cur, id => crystal.settings.s
 mk($('effortChips'), [['auto', 'Auto'], ['fast', 'Low'], ['mid', 'Medium'], ['heavy', 'High']], S['llm.mode'], id => crystal.settings.set({ 'llm.mode': id }));
 $('provChips').hidden = provs.length < 2;
 }
+
+// ---------------------------------------------------------------- floating quick-action panel (model provider + workspaces)
+let fProviders = [], fActiveProvider = '', fWsList = [], fWsActive = null, fOpen = null; // 'model' | 'workspaces' | null
+async function fLoad() {
+  try {
+    const r = await crystal.backend.api('GET', '/api/providers');
+    fProviders = (r.data && r.data.providers) || [];
+    fActiveProvider = (r.data && r.data.active) || 'ollama';
+  } catch (e) { fProviders = []; fActiveProvider = 'ollama'; }
+  try {
+    const r2 = await crystal.backend.api('GET', '/api/workspaces');
+    const d = r2.data || {};
+    fWsList = d.workspaces || [];
+    fWsActive = d.active || null;
+  } catch (e) { fWsList = []; fWsActive = null; }
+  fRefreshBtns();
+}
+function fRefreshBtns() {
+  el.floatWorkspace.classList.toggle('activeWorkspace', !!fWsActive);
+}
+function fToast(msg) {
+  el.floatToast.textContent = msg;
+  el.floatToast.hidden = false;
+  setTimeout(() => { el.floatToast.hidden = true; }, 1600);
+}
+function fClose() { fOpen = null; el.floatMenu.textContent = ''; el.floatMenu.hidden = true; }
+function fRenderMenu() {
+  el.floatMenu.textContent = '';
+  if (fOpen === 'model') el.floatMenu.append(fModelMenu());
+  if (fOpen === 'workspaces') el.floatMenu.append(fWorkspaceMenu());
+  el.floatMenu.hidden = false;
+}
+function fModelMenu() {
+  const wrap = document.createElement('div');
+  wrap.append(Object.assign(document.createElement('div'), { className: 'fdTitle', textContent: 'Model provider' }));
+  const list = document.createElement('div');
+  for (const p of fProviders) {
+    const isActive = p.id === fActiveProvider;
+    const it = Object.assign(document.createElement('div'), { className: 'floatItem' + (isActive ? ' active' : '') });
+    it.append(
+      Object.assign(document.createElement('span'), { className: 'name', textContent: p.name }),
+      Object.assign(document.createElement('span'), { className: 'path', textContent: p.kind === 'ollama' ? 'Ollama (local)' : (p.baseUrl || 'OpenAI-compatible') }),
+      Object.assign(document.createElement('span'), { className: 'tag', textContent: isActive ? 'active' : p.kind.toUpperCase() }));
+    it.onclick = async () => {
+      await crystal.settings.set({ 'llm.provider': p.id });
+      fActiveProvider = p.id;
+      fClose(); fToast('Provider → ' + p.name);
+    };
+    list.append(it);
+  }
+  wrap.append(list);
+  const tiers = Object.assign(document.createElement('div'), { style: 'display:flex;gap:6px;margin-top:8px;' });
+  for (const t of ['fast','mid','heavy']) {
+    const b = Object.assign(document.createElement('button'), { className: 'b', type: 'button', textContent: t.toUpperCase() });
+    b.title = 'Force effort tier: ' + t;
+    b.onclick = async () => {
+      await crystal.settings.set({ 'llm.mode': t });
+      fClose(); fToast('Effort → ' + t.toUpperCase());
+    };
+    tiers.append(b);
+  }
+  wrap.append(Object.assign(document.createElement('div'), { style: 'margin-top:6px;' }, tiers));
+  const close = Object.assign(document.createElement('button'), { className: 'b', type: 'button', textContent: 'Close' });
+  close.onclick = fClose;
+  wrap.append(close);
+  return wrap;
+}
+function fWorkspaceMenu() {
+  const wrap = document.createElement('div');
+  wrap.append(Object.assign(document.createElement('div'), { className: 'fdTitle', textContent: 'Workspaces' }));
+  const list = document.createElement('div');
+  for (const w of fWsList) {
+    const isActive = fWsActive && w.name === fWsActive.name;
+    const it = Object.assign(document.createElement('div'), { className: 'floatItem' + (isActive ? ' active' : '') });
+    it.append(
+      Object.assign(document.createElement('span'), { className: 'name', textContent: w.name }),
+      Object.assign(document.createElement('span'), { className: 'path', textContent: w.path }),
+      Object.assign(document.createElement('span'), { className: 'tag', textContent: isActive ? 'active' : '' }));
+    it.onclick = async () => {
+      const ok = confirm(`Switch to workspace “${w.name}”?\n\n${w.path}`);
+      if (!ok) return;
+      const r = await crystal.backend.api('POST', '/api/workspaces/switch', { name: w.name });
+      if (!r.ok) { fToast('Switch failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+      fWsActive = r.data.active;
+      fRefreshBtns();
+      fClose(); fToast('Switched to “' + w.name + '”');
+    };
+    list.append(it);
+  }
+  wrap.append(list);
+  if (!fWsList.length) wrap.append(Object.assign(document.createElement('div'), { style: 'padding:8px;color:var(--user);font-size:12px;', textContent: 'No workspaces yet. Add one in Settings.' }));
+  const bar = Object.assign(document.createElement('div'), { style: 'margin-top:6px;' });
+  const add = Object.assign(document.createElement('button'), { className: 'b', type: 'button', textContent: 'Manage all…' });
+  add.onclick = () => { fClose(); crystal.win.openSettings(); };
+  const close = Object.assign(document.createElement('button'), { className: 'b', type: 'button', textContent: 'Close' });
+  close.onclick = fClose;
+  bar.append(add, close);
+  wrap.append(bar);
+  return wrap;
+}
+el.floatModel.onclick = async () => { await fLoad(); fOpen = fOpen === 'model' ? null : 'model'; if (fOpen) fRenderMenu(); else fClose(); };
+el.floatWorkspace.onclick = async () => { await fLoad(); fOpen = fOpen === 'workspaces' ? null : 'workspaces'; if (fOpen) fRenderMenu(); else fClose(); };
+document.addEventListener('mousedown', e => {
+  if (!el.floatPanel || fOpen === null) return;
+  if (!el.floatPanel.contains(e.target)) fClose();
+});
 
 el.form.addEventListener('submit', e => {
   e.preventDefault();

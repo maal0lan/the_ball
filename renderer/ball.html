@@ -29,6 +29,17 @@
         <button id="micBtn" type="button" hidden aria-label="Start voice input" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11Z"/></svg></button>
         <button id="stopBtn" type="button" hidden aria-label="Stop">Stop</button>
       </form>
+    <!-- Floating quick-action buttons beside the chat dialog -->
+    <section id="floatPanel" hidden>
+      <button id="floatModel" type="button" title="Model provider (Ollama / OpenRouter / OpenAI-compatible)">
+        <span class="ic">M</span><span class="lab">Model provider</span>
+      </button>
+      <button id="floatWorkspace" type="button" title="Workspaces (switch the folder Crystal can access)">
+        <span class="ic">W</span><span class="lab">Workspaces</span>
+      </button>
+      <div id="floatMenu" class="floatMenu"></div>
+      <div id="floatToast" class="floatToast"></div>
+    </section>
     </section>
   </div>
   <script src="stt.js"></script>
