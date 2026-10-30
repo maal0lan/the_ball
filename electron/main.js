@@ -52,6 +52,10 @@ app.whenReady().then(async () => {
   screen.on('display-metrics-changed', notifyCaptureChanged);
   if (S('debug.showConsoleOnStart')) openSingleton('console');
   backend.start();
+  // Desktop shortcut can ask for every UI at once: ball + settings + debug console.
+  if (process.argv.includes('--open-all-uis') || process.env.CRYSTAL_OPEN_ALL_UIS === '1') {
+    setTimeout(() => { openSingleton('settings'); openSingleton('console'); }, 1500);
+  }
   if (process.env.CRYSTAL_SELFTEST) require('./selftest')({ BrowserWindow, ballWin, log, openWindow: openSingleton });
 });
 
@@ -388,6 +392,10 @@ app.whenReady().then(async () => {
   screen.on('display-metrics-changed', () => ballWin && ballWin.webContents.send('capture:display-changed'));
   if (S('debug.showConsoleOnStart')) openSingleton('console');
   backend.start();
+  // Desktop shortcut can ask for every UI at once: ball + settings + debug console.
+  if (process.argv.includes('--open-all-uis') || process.env.CRYSTAL_OPEN_ALL_UIS === '1') {
+    setTimeout(() => { openSingleton('settings'); openSingleton('console'); }, 1500);
+  }
   if (process.env.CRYSTAL_SELFTEST) require('./selftest')({ BrowserWindow, ballWin, log, openWindow: openSingleton });
 });
 
