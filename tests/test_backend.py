@@ -218,6 +218,264 @@ def test_inactive_reasons_are_specific(tmp_path):
     assert "Allow writing" in tools.why_inactive("write_file") and tools.why_inactive("read_file") == ""
 
 
+# ------------------------------------------------------------------ workspaces
+_WS_KEYS = ["agent.enabled", "agent.workspace", "agent.activeWorkspace", "agent.workspaces",
+            "agent.allowRead", "agent.allowWrite", "agent.allowDelete", "agent.allowExec",
+            "agent.skillsEnabled", "agent.skillTrust", "agent.trustedSkills", "agent.skillsDisabled"]
+
+
+def _ws_save():
+    return {k: settings.get(k) for k in _WS_KEYS}
+
+
+def _ws_restore(saved):
+    settings.update(saved)
+
+
+def _ws_enable_all():
+    settings.update({"agent.enabled": True, "agent.skillsEnabled": True, "agent.skillsDisabled": "",
+                     "agent.allowRead": True, "agent.allowWrite": True, "agent.allowDelete": True,
+                     "agent.allowExec": True})
+
+
+def test_workspaces_list_and_switch(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d1 = tmp_path / "d1"; d1.mkdir()
+        d2 = tmp_path / "d2"; d2.mkdir()
+        tools.add_workspace("one", str(d1))
+        tools.add_workspace("two", str(d2))
+        names = {w["name"] for w in tools.workspaces()}
+        assert names == {"one", "two"}
+        assert tools.switch_workspace("one")["name"] == "one"
+        assert tools.get_active_workspace()["name"] == "one"
+        assert str(tools.workspace_root()) == str(d1)
+        assert tools.switch_workspace("two")["name"] == "two"
+        assert str(tools.workspace_root()) == str(d2)
+    finally:
+        _ws_restore(saved)
+
+
+def test_workspace_permissions_restrict_global_permissions(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        # write enabled globally, disabled in workspace
+        tools.add_workspace("restricted", str(d), {"read": True, "write": False, "delete": True, "exec": True})
+        tools.switch_workspace("restricted")
+        assert tools.effective_workspace_permissions()["write"] is False
+        assert "write_file" not in tools.enabled_tools()
+        assert "delete_path" in tools.enabled_tools()
+    finally:
+        _ws_restore(saved)
+
+
+def test_workspace_permissions_cannot_override_global_deny(tmp_path):
+    saved = _ws_save()
+    try:
+        settings.update({"agent.enabled": True, "agent.skillsEnabled": True, "agent.skillsDisabled": "",
+                         "agent.allowRead": True, "agent.allowWrite": False, "agent.allowDelete": True,
+                         "agent.allowExec": True})
+        d = tmp_path / "d"; d.mkdir()
+        # workspace claims write, but global write is off
+        tools.add_workspace("loose", str(d), {"read": True, "write": True, "delete": True, "exec": True})
+        tools.switch_workspace("loose")
+        assert tools.effective_workspace_permissions()["write"] is False
+        assert "write_file" not in tools.enabled_tools()
+    finally:
+        _ws_restore(saved)
+
+
+def test_workspace_permission_defaults_inherit_global(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        # omit exec permission -> inherits global (True)
+        tools.add_workspace("inherit", str(d), {"read": True, "write": True, "delete": True})
+        tools.switch_workspace("inherit")
+        assert tools.effective_workspace_permissions()["exec"] is True
+        assert "run_command" in tools.enabled_tools()
+    finally:
+        _ws_restore(saved)
+
+
+def test_switch_to_invalid_workspace_errors(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        tools.add_workspace("real", str(d))
+        tools.switch_workspace("real")
+        before = tools.get_active_workspace()["name"]
+        try:
+            tools.switch_workspace("nope")
+            assert False, "expected ToolError"
+        except tools.ToolError:
+            pass
+        # old active workspace unchanged
+        assert tools.get_active_workspace()["name"] == before
+    finally:
+        _ws_restore(saved)
+
+
+def test_workspace_path_must_exist(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        missing = tmp_path / "does-not-exist"
+        try:
+            tools.add_workspace("ghost", str(missing))
+            assert False, "expected ToolError"
+        except tools.ToolError:
+            pass
+    finally:
+        _ws_restore(saved)
+
+
+def test_workspace_path_must_be_directory(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        f = tmp_path / "a-file.txt"; f.write_text("x")
+        try:
+            tools.add_workspace("afile", str(f))
+            assert False, "expected ToolError"
+        except tools.ToolError:
+            pass
+    finally:
+        _ws_restore(saved)
+
+
+def test_duplicate_workspace_name_rejected(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        tools.add_workspace("dup", str(d))
+        try:
+            tools.add_workspace("dup", str(d))
+            assert False, "expected ToolError"
+        except tools.ToolError:
+            pass
+    finally:
+        _ws_restore(saved)
+
+
+def test_delete_active_workspace_clears_selection(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        tools.add_workspace("gone", str(d))
+        tools.switch_workspace("gone")
+        assert tools.get_active_workspace() is not None
+        tools.remove_workspace("gone")
+        assert tools.get_active_workspace() is None
+        assert settings.get("agent.workspace") == ""
+        assert settings.get("agent.activeWorkspace") == ""
+        assert "write_file" not in tools.enabled_tools()
+    finally:
+        _ws_restore(saved)
+
+
+def test_delete_inactive_workspace_preserves_active(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d1 = tmp_path / "d1"; d1.mkdir()
+        d2 = tmp_path / "d2"; d2.mkdir()
+        tools.add_workspace("active", str(d1))
+        tools.add_workspace("inactive", str(d2))
+        tools.switch_workspace("active")
+        tools.remove_workspace("inactive")
+        assert tools.get_active_workspace()["name"] == "active"
+        assert str(tools.workspace_root()) == str(d1)
+    finally:
+        _ws_restore(saved)
+
+
+def test_file_tools_are_scoped_to_active_workspace(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d1 = tmp_path / "d1"; d1.mkdir()
+        (d1 / "in-d1.txt").write_text("hello d1")
+        d2 = tmp_path / "d2"; d2.mkdir()
+        (d2 / "in-d2.txt").write_text("hello d2")
+        tools.add_workspace("ws1", str(d1))
+        tools.add_workspace("ws2", str(d2))
+        tools.switch_workspace("ws1")
+        assert str(tools.workspace_root()) == str(d1)
+        # can read inside active workspace
+        assert "in-d1.txt" in tools.execute("list_dir", {"path": "."})["result"]
+        # cannot escape into the other workspace
+        assert not tools.execute("read_file", {"path": "../d2/in-d2.txt"})["ok"]
+        assert not tools.execute("read_file", {"path": str(d2 / "in-d2.txt")})["ok"]
+    finally:
+        _ws_restore(saved)
+
+
+def test_workspace_symlink_escape_blocked(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        outside = tmp_path / "outside.txt"; outside.write_text("secret")
+        try:
+            (d / "link.txt").symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks not available (needs admin on Windows)")
+        tools.add_workspace("sym", str(d))
+        tools.switch_workspace("sym")
+        assert not tools.execute("read_file", {"path": "link.txt"})["ok"]
+    finally:
+        _ws_restore(saved)
+
+
+def test_legacy_single_workspace_preserved(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d = tmp_path / "d"; d.mkdir()
+        # legacy: only agent.workspace set, no saved workspaces
+        settings.update({"agent.workspace": str(d), "agent.activeWorkspace": "",
+                         "agent.workspaces": "[]"})
+        assert tools.workspace_root() is not None
+        assert str(tools.workspace_root()) == str(d)
+        assert tools.workspaces() == []
+    finally:
+        _ws_restore(saved)
+
+
+def test_failed_switch_does_not_partially_update_settings(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        d1 = tmp_path / "d1"; d1.mkdir()
+        d2 = tmp_path / "d2"; d2.mkdir()
+        tools.add_workspace("one", str(d1))
+        tools.add_workspace("two", str(d2))
+        tools.switch_workspace("one")
+        before_ws = settings.get("agent.workspace")
+        before_name = settings.get("agent.activeWorkspace")
+        # switching to a workspace whose path no longer exists must not
+        # partially update either setting
+        import shutil
+        shutil.rmtree(d2)
+        try:
+            tools.switch_workspace("two")
+            assert False, "expected ToolError"
+        except tools.ToolError:
+            pass
+        assert settings.get("agent.workspace") == before_ws
+        assert settings.get("agent.activeWorkspace") == before_name
+    finally:
+        _ws_restore(saved)
+
+
 def test_confirm_flag_forces_confirmation(tmp_path, warn_mode):
     d = tmp_path / "s"; d.mkdir()
     (d / "x.py").write_text('def register(r):\n    r(name="danger", signature="danger()", perm="misc", fn=lambda: "ok", confirm=True)\n')
