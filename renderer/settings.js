@@ -193,93 +193,130 @@ function renderTools(box) {
 
 // ---------------------------------------------------------------- workspaces UI
 function wsBadge(label, on) {
-  return h('span', {
-    style: 'font-size:11px;padding:2px 8px;border-radius:10px;' +
-           'background:' + (on ? 'var(--accent)' : '#263447') + ';' +
-           'color:' + (on ? '#07211d' : 'var(--mute)') + ';'
-  }, label[0].toUpperCase());
+  return h('span', { class: 'ws-badge' + (on ? ' on' : '') }, label);
 }
 
 function wsPermBadges(perms) {
   perms = perms || {};
-  return h('div', { style: 'display:flex;gap:6px;' },
-    wsBadge('read', !!perms.read),
-    wsBadge('write', !!perms.write),
-    wsBadge('delete', !!perms.delete),
-    wsBadge('exec', !!perms.exec));
+  return h('div', { class: 'ws-perms' },
+    ...['read', 'write', 'delete', 'exec'].map(p => wsBadge(p, !!perms[p])));
 }
 
-function wsActionButtons(w, isActive, say, refresh) {
-  const switchBtn = h('button', { class: 'b', type: 'button' }, isActive ? 'Active' : 'Switch');
+function wsActionButtons(w, isActive, say, refresh, onEdit) {
+  const switchBtn = h('button', { class: 'b ws-switch', type: 'button' }, isActive ? 'Active' : 'Switch');
   switchBtn.onclick = async () => {
     const ok = confirm(`Switch to workspace “${w.name}”?\n\n${w.path}\n\nThis changes the folder the agent can access.`);
     if (!ok) return;
     const r = await crystal.backend.api('POST', '/api/workspaces/switch', { name: w.name });
     if (!r.ok) { say('Switch failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-    await crystal.settings.set({ 'agent.workspace': r.data.active.path, 'agent.activeWorkspace': w.name });
-    await crystal.settings.all();
-    say('Switched to “' + w.name + '”.');
-    refresh();
+    try {
+      await crystal.settings.set({ 'agent.workspace': r.data.active.path, 'agent.activeWorkspace': w.name });
+    } catch (e) {
+      say(`Workspace switched for this session, but could not save settings: ${e.message}`);
+      console.error(e);
+      return;
+    }
+    if (await refresh()) say('Switched to "' + w.name + '".');
   };
 
-  const editBtn = h('button', { class: 'b', type: 'button' }, 'Edit path');
-  editBtn.onclick = async () => {
-    const np = prompt('New path for “' + w.name + '”: ', w.path);
-    if (np == null) return;
-    const r = await crystal.backend.api('POST', '/api/workspaces/' + encodeURIComponent(w.name), { path: np });
-    if (!r.ok) { say('Update failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-    say('Updated “' + w.name + '”.');
-    refresh();
-  };
+  const editBtn = h('button', { class: 'b ws-edit-trigger', type: 'button' }, 'Edit path');
+  editBtn.onclick = onEdit;
 
-  const removeBtn = h('button', { class: 'b', type: 'button' }, 'Remove');
+  const removeBtn = h('button', { class: 'b ws-remove', type: 'button' }, 'Remove');
   removeBtn.onclick = async () => {
     const ok = confirm(`Remove workspace “${w.name}”?`);
     if (!ok) return;
     const r = await crystal.backend.api('DELETE', '/api/workspaces/' + encodeURIComponent(w.name));
     if (!r.ok) { say('Remove failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-    say('Removed “' + w.name + '”.');
-    refresh();
+    if (await refresh()) say('Removed "' + w.name + '".');
   };
 
-  return h('div', { style: 'display:flex;gap:6px;' }, switchBtn, editBtn, removeBtn);
+  return h('div', { class: 'ws-actions' }, switchBtn, editBtn, removeBtn);
 }
 
 function wsRow(w, activeName, say, refresh) {
   const perms = w.permissions || {};
   const isActive = w.name === activeName;
-  const meta = h('div', { style: 'flex:1;min-width:0;' },
-    h('div', { style: 'font-weight:600;' }, w.name),
-    h('div', { style: 'color: var(--mute); font-size: 12px; word-break:break-all;' }, w.path));
-  const row = h('div', {
-    style: 'border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;' +
-           'background:' + (isActive ? 'rgba(127,214,201,.12)' : 'transparent') + ';'
+  const path = h('div', { class: 'ws-path' }, w.path);
+  const pathInput = h('input', { class: 'ws-edit-input', type: 'text', value: w.path, 'aria-label': `New path for ${w.name}`, hidden: true });
+  const editActions = h('div', { class: 'ws-edit-actions', hidden: true });
+  const editForm = h('div', { class: 'ws-edit-form', hidden: true });
+  const saveBtn = h('button', { class: 'b pri', type: 'button' }, 'Save path');
+  const cancelBtn = h('button', { class: 'b', type: 'button' }, 'Cancel');
+  editActions.append(saveBtn, cancelBtn);
+  editForm.append(pathInput, editActions);
+  let actionButtons;
+  const closeEditor = () => {
+    pathInput.value = w.path;
+    editForm.hidden = true;
+    pathInput.hidden = true;
+    editActions.hidden = true;
+    path.hidden = false;
+    actionButtons.querySelector('.ws-edit-trigger').hidden = false;
+    actionButtons.querySelector('.ws-switch').disabled = false;
+    actionButtons.querySelector('.ws-remove').disabled = false;
+  };
+  const meta = h('div', { class: 'ws-meta' },
+    h('div', { class: 'ws-name' }, w.name),
+    path,
+    editForm);
+  const row = h('div', { class: 'ws-row' + (isActive ? ' active' : '') });
+  actionButtons = wsActionButtons(w, isActive, say, refresh, () => {
+    path.hidden = true;
+    editForm.hidden = false;
+    pathInput.hidden = false;
+    editActions.hidden = false;
+    actionButtons.querySelector('.ws-edit-trigger').hidden = true;
+    actionButtons.querySelector('.ws-switch').disabled = true;
+    actionButtons.querySelector('.ws-remove').disabled = true;
+    pathInput.focus();
+    pathInput.select();
   });
-  row.append(meta, wsPermBadges(perms), wsActionButtons(w, isActive, say, refresh));
+  saveBtn.onclick = async () => {
+    const newPath = pathInput.value.trim();
+    if (!newPath) { say('Folder path is required.'); pathInput.focus(); return; }
+    saveBtn.disabled = true;
+    try {
+      const r = await crystal.backend.api('POST', '/api/workspaces/' + encodeURIComponent(w.name), { path: newPath });
+      if (!r.ok) {
+        say('Update failed: ' + (r.data && r.data.error || JSON.stringify(r)));
+        return;
+      }
+      if (await refresh()) say('Updated "' + w.name + '".');
+    } catch (e) {
+      say('Update failed: ' + e.message);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  };
+  cancelBtn.onclick = closeEditor;
+  pathInput.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+    if (e.key === 'Escape') { e.preventDefault(); closeEditor(); }
+  };
+  row.append(meta, wsPermBadges(perms), actionButtons);
   return row;
 }
 
 function wsAddForm(say, refresh) {
-  const addBox = h('div', {
-    style: 'border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:14px;background: var(--panel);'
-  });
-  addBox.append(h('b', { style: 'display:block;margin-bottom:8px;' }, 'Add workspace'));
-  const nameI = h('input', { type: 'text', placeholder: 'Name (e.g. notes)', style: 'width: min(260px,100%);' });
-  const pathI = h('input', { type: 'text', placeholder: 'Folder path', style: 'flex:1;min-width:0;' });
+  const addBox = h('div', { class: 'ws-add' });
+  addBox.append(h('b', { class: 'ws-add-title' }, 'Add workspace'));
+  const nameI = h('input', { type: 'text', placeholder: 'Name (e.g. notes)' });
+  const pathI = h('input', { type: 'text', placeholder: 'Folder path' });
   const browse = h('button', { class: 'b', type: 'button' }, 'Browse…');
   browse.onclick = async () => {
     const p = await crystal.app.chooseFolder();
     if (p) pathI.value = p;
   };
-  const permRow = h('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;' });
+  const permRow = h('div', { class: 'ws-permission-list' });
   const permInputs = {};
   for (const p of ['read', 'write', 'delete', 'exec']) {
     const cb = h('input', { type: 'checkbox' });
     cb.checked = true;
-    permRow.append(h('label', { class: 'sw' }, cb, h('span', {}, p)));
+    permRow.append(h('label', { class: 'ws-permission' }, cb, h('span', {}, p)));
     permInputs[p] = cb;
   }
-  permRow.append(h('span', { style: 'color: var(--mute); font-size: 12px; margin-left: 8px;' }, 'permissions (unchecked = restricted)'));
+  permRow.append(h('span', { class: 'ws-permission-help' }, 'Unchecked permissions are restricted.'));
   const addBtn = h('button', { class: 'b pri', type: 'button' }, 'Add');
   addBtn.onclick = async () => {
     const name = nameI.value.trim();
@@ -287,15 +324,17 @@ function wsAddForm(say, refresh) {
     if (!name || !path) { say('Name and path are required.'); return; }
     const perms = {};
     for (const p of ['read', 'write', 'delete', 'exec']) perms[p] = permInputs[p].checked;
-    const r = await crystal.backend.api('POST', '/api/workspaces', { name, path, permissions: perms });
+    let r;
+    try { r = await crystal.backend.api('POST', '/api/workspaces', { name, path, permissions: perms }); }
+    catch (e) { say('Add failed: ' + e.message); return; }
     if (!r.ok) { say('Add failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
-    say('Added “' + name + '”.');
     nameI.value = ''; pathI.value = '';
-    refresh();
+    if (await refresh()) say('Added "' + name + '".');
   };
   addBox.append(
-    h('div', { style: 'display:flex;gap:8px;align-items:flex-start;' }, nameI,
-      h('div', { style: 'display:flex;gap:8px;' }, pathI, browse)),
+    h('div', { class: 'ws-add-fields' },
+      h('label', { class: 'ws-name-field' }, h('span', {}, 'Name'), nameI),
+      h('label', { class: 'ws-path-field' }, h('span', {}, 'Folder'), h('div', { class: 'ws-path-input' }, pathI, browse))),
     permRow, addBtn);
   return addBox;
 }
@@ -307,37 +346,64 @@ async function renderWorkspaces(box) {
   $('desc').textContent = 'Named folders the agent can read/write in. Switching requires confirmation.';
   box.textContent = '';
 
-  const out = h('div', { id: 'wsOut', style: 'white-space:pre-wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 14px; max-width: 880px;' }, 'Loading…');
-  const say = t => { out.textContent = t; };
-  box.append(out);
+  const out = h('div', { id: 'wsOut', class: 'ws-status', hidden: true });
+  const content = h('div', { class: 'ws-content' });
+  const say = t => { out.textContent = t; out.hidden = !t; };
+  box.append(out, content);
+  let refreshId = 0;
+  const persistWorkspaceState = async data => {
+    const active = data.active || null;
+    const patch = { 'agent.workspaces': JSON.stringify(data.workspaces || []) };
+    if (active) {
+      patch['agent.activeWorkspace'] = active.name || '';
+      patch['agent.workspace'] = active.path || '';
+    } else if (values['agent.activeWorkspace']) {
+      patch['agent.activeWorkspace'] = '';
+      patch['agent.workspace'] = '';
+    }
+    await crystal.settings.set(patch);
+    values = { ...values, ...patch };
+  };
 
   const refresh = async () => {
+    const requestId = ++refreshId;
     say('Loading…');
-    const r = await crystal.backend.api('GET', '/api/workspaces');
-    if (!r.ok) { say('Failed to load workspaces: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+    let r;
+    try { r = await crystal.backend.api('GET', '/api/workspaces'); }
+    catch (e) { if (requestId === refreshId) say('Failed to load workspaces: ' + e.message); return false; }
+    if (requestId !== refreshId) return false;
+    if (!r.ok) { say('Failed to load workspaces: ' + (r.data && r.data.error || JSON.stringify(r))); return false; }
     const data = r.data || {};
     const list = data.workspaces || [];
     const active = data.active;
-    out.textContent = '';
+    try {
+      await persistWorkspaceState(data);
+    } catch (e) {
+      if (requestId === refreshId) say('Could not save workspace settings: ' + e.message);
+      console.error(e);
+      return false;
+    }
+    say('');
 
     const activeName = active && active.name;
+    let activeRow;
 
     if (active) {
-      box.append(h('div', { style: 'margin-bottom: 10px;' },
-        h('b', {}, 'Active: '), h('span', { style: 'color: var(--accent); margin-left: 6px;' }, active.name),
-        h('span', { style: 'color: var(--mute); margin-left: 10px; font-size: 12px;' }, '→ ' + active.path)));
+      activeRow = h('div', { class: 'ws-active' },
+        h('b', {}, 'Active: '), h('span', { class: 'ws-active-name' }, active.name),
+        h('span', { class: 'ws-active-path' }, active.path));
     } else {
-      box.append(h('div', { style: 'margin-bottom: 10px; color: var(--mute);' },
-        h('b', {}, 'Active: '), h('span', { style: 'color: var(--bad);' }, '(no workspace selected)')));
+      activeRow = h('div', { class: 'ws-active empty' },
+        h('b', {}, 'Active: '), h('span', {}, '(no workspace selected)'));
     }
 
-    const ul = h('div', { style: 'display:flex;flex-direction:column;gap:8px;' });
+    const ul = h('div', { class: 'ws-list' });
     if (!list.length) {
-      ul.append(h('p', { style: 'color: var(--mute); margin: 8px 0;' }, 'No saved workspaces yet. Add one below.'));
+      ul.append(h('p', { class: 'ws-empty' }, 'No saved workspaces yet. Add one below.'));
     }
     for (const w of list) ul.append(wsRow(w, activeName, say, refresh));
-    box.append(ul);
-    box.append(wsAddForm(say, refresh));
+    content.replaceChildren(activeRow, ul, wsAddForm(say, refresh));
+    return true;
   };
 
   await refresh();

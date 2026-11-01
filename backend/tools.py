@@ -209,13 +209,14 @@ def update_workspace(name: str, **changes) -> dict:
     perms = dict(entry.get("permissions", {}))
     if "permissions" in changes:
         perms = {p: bool(changes["permissions"].get(p, perms.get(p, True))) for p in _WORKSPACE_PERMS}
-    saved = [_parse_workspaces()]
-    saved = [dict(w) for w in saved]
+    saved = list(_parse_workspaces())
     for i, w in enumerate(saved):
         if w["name"] == name:
             saved[i] = {"name": new_name, "path": str(resolved), "permissions": perms}
             break
     _save_workspaces(saved)
+    if str(settings.get("agent.activeWorkspace") or "").strip() == name:
+        settings.update({"agent.workspace": str(resolved), "agent.activeWorkspace": new_name})
     return saved[i]
 
 

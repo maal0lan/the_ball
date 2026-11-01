@@ -257,6 +257,27 @@ def test_workspaces_list_and_switch(tmp_path):
         _ws_restore(saved)
 
 
+def test_update_workspace_persists_flat_list_and_active_path(tmp_path):
+    saved = _ws_save()
+    try:
+        _ws_enable_all()
+        original = tmp_path / "original"; original.mkdir()
+        updated = tmp_path / "updated"; updated.mkdir()
+        other = tmp_path / "other"; other.mkdir()
+        tools.add_workspace("home 1", str(original))
+        tools.add_workspace("other", str(other))
+        tools.switch_workspace("home 1")
+
+        result = tools.update_workspace("home 1", path=str(updated))
+
+        assert result["path"] == str(updated.resolve())
+        assert [w["name"] for w in tools.workspaces()] == ["home 1", "other"]
+        assert tools.get_active_workspace()["path"] == str(updated.resolve())
+        assert str(tools.workspace_root()) == str(updated.resolve())
+    finally:
+        _ws_restore(saved)
+
+
 def test_workspace_permissions_restrict_global_permissions(tmp_path):
     saved = _ws_save()
     try:

@@ -4,11 +4,19 @@
 // ============================================================ state & helpers
 let S = {};
 const $ = id => document.getElementById(id);
-const el = { video: $('screenVideo'), glass: $('glass'), hit: $('ballHit'), badge: $('badge'), panel: $('panel'),
+const el = { stage: $('stage'), video: $('screenVideo'), glass: $('glass'), hit: $('ballHit'), badge: $('badge'), panel: $('panel'),
   backdrop: $('panelBackdrop'), msgs: $('messages'), notice: $('notice'), confirm: $('confirm'),
   confirmText: $('confirmText'), input: $('input'), form: $('composer'), mic: $('micBtn'), stop: $('stopBtn'),
   floatPanel: $('floatPanel'), floatModel: $('floatModel'), floatWorkspace: $('floatWorkspace'),
   floatMenu: $('floatMenu'), floatToast: $('floatToast') };
+
+function positionFloatPanel() {
+  const stage = el.stage.getBoundingClientRect();
+  const input = el.input.getBoundingClientRect();
+  const controls = el.floatPanel.getBoundingClientRect();
+  el.floatPanel.style.left = `${input.left - stage.left - controls.width - 8}px`;
+  el.floatPanel.style.top = `${input.top - stage.top + (input.height - controls.height) / 2}px`;
+}
 
 const hex = h => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).slice(0, 12);
@@ -365,7 +373,7 @@ function addMsg(kind, text, meta) {
 function setNotice(text, bad) { el.notice.hidden = !text; el.notice.textContent = text || ''; el.notice.classList.toggle('bad', !!bad); }
 
 function openChat() {
-  chatOpen = true; el.panel.hidden = false; el.floatPanel.hidden = false; fLoad(); clearTimeout(hideTimer); el.input.focus(); scrollDown();
+  chatOpen = true; el.panel.hidden = false; el.floatPanel.hidden = false; positionFloatPanel(); fLoad(); clearTimeout(hideTimer); el.input.focus(); scrollDown();
 }
 function closeChat() { if (speechListening) stopSpeechInput(false); chatOpen = false; el.panel.hidden = true; el.floatPanel.hidden = true; fClose(); el.input.blur(); crystal.win.ignoreMouse(true); }
 function toggleChat() { chatOpen ? closeChat() : openChat(); }
@@ -401,7 +409,7 @@ $('provChips').hidden = provs.length < 2;
 }
 
 // ---------------------------------------------------------------- floating quick-action panel (model provider + workspaces)
-let fProviders = [], fActiveProvider = '', fWsList = [], fWsActive = null, fOpen = null; // 'model' | 'workspaces' | null
+let fProviders = [], fActiveProvider = '', fWsList = [], fWsActive = null, fOpen = null, fToastTimer = null; // 'model' | 'workspaces' | null
 async function fLoad() {
   try {
     const r = await crystal.backend.api('GET', '/api/providers');
@@ -420,16 +428,42 @@ function fRefreshBtns() {
   el.floatWorkspace.classList.toggle('activeWorkspace', !!fWsActive);
 }
 function fToast(msg) {
+  clearTimeout(fToastTimer);
   el.floatToast.textContent = msg;
   el.floatToast.hidden = false;
-  setTimeout(() => { el.floatToast.hidden = true; }, 1600);
+  fPositionBesideBall(el.floatToast);
+  fToastTimer = setTimeout(() => { el.floatToast.hidden = true; }, 2400);
 }
-function fClose() { fOpen = null; el.floatMenu.textContent = ''; el.floatMenu.hidden = true; }
+function fClose(keepInteractive = false) {
+  fOpen = null;
+  el.floatMenu.textContent = '';
+  el.floatMenu.hidden = true;
+  crystal.win.ignoreMouse(!keepInteractive);
+}
 function fRenderMenu() {
   el.floatMenu.textContent = '';
   if (fOpen === 'model') el.floatMenu.append(fModelMenu());
   if (fOpen === 'workspaces') el.floatMenu.append(fWorkspaceMenu());
   el.floatMenu.hidden = false;
+  crystal.win.ignoreMouse(false);
+  fPositionMenu();
+}
+function fPositionBesideBall(element) {
+  const ball = el.hit.getBoundingClientRect();
+  const box = element.getBoundingClientRect();
+  const gap = 14, edge = 12;
+  const rightSpace = window.innerWidth - ball.right;
+  const leftSpace = ball.left;
+  const opensLeft = rightSpace < box.width + gap + edge && leftSpace > rightSpace;
+  const left = opensLeft
+    ? Math.max(edge, ball.left - box.width - gap)
+    : Math.min(ball.right + gap, window.innerWidth - box.width - edge);
+  const top = Math.max(edge, Math.min(ball.top + (ball.height - box.height) / 2, window.innerHeight - box.height - edge));
+  element.style.left = `${left}px`;
+  element.style.top = `${top}px`;
+}
+function fPositionMenu() {
+  fPositionBesideBall(el.floatMenu);
 }
 function fModelMenu() {
   const wrap = document.createElement('div');
@@ -482,6 +516,13 @@ function fWorkspaceMenu() {
       if (!ok) return;
       const r = await crystal.backend.api('POST', '/api/workspaces/switch', { name: w.name });
       if (!r.ok) { fToast('Switch failed: ' + (r.data && r.data.error || JSON.stringify(r))); return; }
+      try {
+        await crystal.settings.set({ 'agent.workspace': r.data.active.path, 'agent.activeWorkspace': w.name });
+      } catch (e) {
+        fToast('Workspace switched for this session, but could not save settings: ' + e.message);
+        console.error(e);
+        return;
+      }
       fWsActive = r.data.active;
       fRefreshBtns();
       fClose(); fToast('Switched to “' + w.name + '”');
@@ -499,11 +540,27 @@ function fWorkspaceMenu() {
   wrap.append(bar);
   return wrap;
 }
-el.floatModel.onclick = async () => { await fLoad(); fOpen = fOpen === 'model' ? null : 'model'; if (fOpen) fRenderMenu(); else fClose(); };
-el.floatWorkspace.onclick = async () => { await fLoad(); fOpen = fOpen === 'workspaces' ? null : 'workspaces'; if (fOpen) fRenderMenu(); else fClose(); };
+el.floatModel.onclick = async () => { await fLoad(); if (fOpen === 'model') fClose(true); else { fOpen = 'model'; fRenderMenu(); } };
+el.floatWorkspace.onclick = async () => { await fLoad(); if (fOpen === 'workspaces') fClose(true); else { fOpen = 'workspaces'; fRenderMenu(); } };
 document.addEventListener('mousedown', e => {
   if (!el.floatPanel || fOpen === null) return;
-  if (!el.floatPanel.contains(e.target)) fClose();
+  if (!el.floatPanel.contains(e.target)) {
+    const keepInteractive = el.panel.contains(e.target) || el.hit.contains(e.target) || el.badge.contains(e.target);
+    fClose(keepInteractive);
+  }
+});
+const floatPositionObserver = new ResizeObserver(() => {
+  if (!el.floatPanel.hidden) positionFloatPanel();
+  if (fOpen !== null) fPositionMenu();
+  if (!el.floatToast.hidden) fPositionBesideBall(el.floatToast);
+});
+floatPositionObserver.observe(el.panel);
+floatPositionObserver.observe(el.input);
+floatPositionObserver.observe(el.hit);
+window.addEventListener('resize', () => {
+  if (!el.floatPanel.hidden) positionFloatPanel();
+  if (fOpen !== null) fPositionMenu();
+  if (!el.floatToast.hidden) fPositionBesideBall(el.floatToast);
 });
 
 el.form.addEventListener('submit', e => {
@@ -637,8 +694,8 @@ function newChat() { sessionId = uuid(); localStorage.setItem('crystal.session',
 
 // ============================================================ mouse: drag, click, click-through
 let drag = null;
-const interactive = on => { if (!dragging) crystal.win.ignoreMouse(!on); };
-for (const n of [el.hit, el.panel, el.badge]) {
+const interactive = on => { if (!dragging) crystal.win.ignoreMouse(!(on || fOpen !== null)); };
+for (const n of [el.hit, el.panel, el.badge, el.floatPanel]) {
   n.addEventListener('mouseenter', () => interactive(true));
   n.addEventListener('mouseleave', () => interactive(false));
 }

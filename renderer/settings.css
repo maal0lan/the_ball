@@ -34,3 +34,50 @@ button.rst { background: none; border: 0; color: var(--mute); cursor: pointer; f
 .prov { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .provcard { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.05); display: flex; flex-direction: column; gap: 8px; }
 .provcard input[type=text], .provcard input[type=password] { flex: 1; min-width: 0; }
+
+.ws-status { max-width: 880px; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; background: var(--panel); color: var(--mute); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-content { display: flex; flex-direction: column; gap: 12px; max-width: 880px; }
+.ws-active { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; padding: 10px 12px; border-radius: 8px; background: rgba(127,214,201,.09); }
+.ws-active-name { color: var(--accent); margin-left: 4px; }
+.ws-active-path { min-width: 0; margin-left: 8px; color: var(--mute); font-size: 12px; overflow-wrap: anywhere; }
+.ws-active.empty { color: var(--mute); background: var(--panel); }
+.ws-active.empty span { color: var(--bad); }
+.ws-list { display: flex; flex-direction: column; gap: 8px; }
+.ws-empty { margin: 4px 0; color: var(--mute); }
+.ws-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.ws-row.active { background: rgba(127,214,201,.08); }
+.ws-meta { min-width: 0; }
+.ws-name { font-weight: 600; overflow-wrap: anywhere; }
+.ws-path { color: var(--mute); font-size: 12px; overflow-wrap: anywhere; }
+.ws-edit-form { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; margin-top: 6px; }
+.ws-edit-input { width: min(100%, 520px) !important; }
+.ws-edit-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-edit-actions[hidden] { display: none; }
+.ws-perms { display: flex; flex-wrap: wrap; gap: 5px; }
+.ws-badge { padding: 3px 7px; border-radius: 999px; background: #263447; color: var(--mute); font-size: 11px; line-height: 1.2; }
+.ws-badge.on { background: var(--accent); color: #07211d; }
+.ws-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ws-actions .b { min-width: 62px; padding: 6px 9px; white-space: nowrap; }
+.ws-add { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.ws-add-title { margin-bottom: -4px; }
+.ws-add-fields { display: grid; grid-template-columns: minmax(160px, .7fr) minmax(260px, 1.3fr); gap: 10px; width: 100%; }
+.ws-name-field, .ws-path-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--mute); font-size: 12px; }
+.ws-add-fields input[type=text] { width: 100%; }
+.ws-path-input { display: flex; gap: 8px; min-width: 0; }
+.ws-path-input input { flex: 1; }
+.ws-path-input .b { flex: none; }
+.ws-permission-list { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.ws-permission { display: inline-flex; align-items: center; gap: 5px; color: var(--text); font-size: 12px; cursor: pointer; }
+.ws-permission input { accent-color: var(--accent); }
+.ws-permission-help { color: var(--mute); font-size: 12px; }
+@media (max-width: 820px) {
+  #content { padding: 20px 18px 48px; }
+  .ws-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .ws-meta { grid-column: 1 / -1; }
+  .ws-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 520px) {
+  .ws-add-fields { grid-template-columns: 1fr; }
+  .ws-actions .b { min-width: 0; }
+  .ws-active-path { flex-basis: 100%; margin-left: 0; }
+}

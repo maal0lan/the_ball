@@ -12,6 +12,9 @@ const APP_ROOT = path.join(__dirname, '..');
 const PRELOAD = path.join(__dirname, 'preload.js');
 const PAD = 28;        // transparent margin around the ball (aura + shadow)
 const CHAT_GAP = 6;    // space between ball and dialogue box
+const FLOAT_MENU_WIDTH = 300;
+const FLOAT_GAP = 14;
+const FLOAT_EDGE = 12;
 const IS_LINUX = process.platform === 'linux';
 
 let store, backend, tray;
@@ -109,7 +112,9 @@ function wireWebContents(win, name) {
 function ballSize() {
   const D = S('appearance.ballSize');
   const stage = D + PAD * 2;
-  return { w: Math.max(stage, S('chat.width') + 32), h: stage + CHAT_GAP + S('chat.height') + 16 };
+  const contentWidth = Math.max(stage, S('chat.width') + 32);
+  const flyoutWidth = D + 2 * (FLOAT_MENU_WIDTH + FLOAT_GAP + FLOAT_EDGE);
+  return { w: Math.max(contentWidth, flyoutWidth), baseW: contentWidth, h: stage + CHAT_GAP + S('chat.height') + 16 };
 }
 
 function defaultPosition(w) {
@@ -123,10 +128,21 @@ function validPosition(x, y, w, h) {
   });
 }
 
+function windowXForCenter(centerX, y, width) {
+  const display = screen.getDisplayNearestPoint({ x: Math.round(centerX), y: Math.round(y + 40) });
+  const area = display.workArea;
+  if (width > area.width) return area.x;
+  return Math.max(area.x, Math.min(Math.round(centerX - width / 2), area.x + area.width - width));
+}
+
 function createBall() {
-  const { w, h } = ballSize();
+  const { w, baseW, h } = ballSize();
   let x = S('behavior.rememberPosition') ? store.getHidden('_x') : undefined;
   let y = S('behavior.rememberPosition') ? store.getHidden('_y') : undefined;
+  if (x != null && y != null) {
+    const savedWidth = store.getHidden('_windowWidth') || baseW;
+    x = windowXForCenter(x + savedWidth / 2, y, w);
+  }
   if (x == null || y == null || !validPosition(x, y, w, h)) ({ x, y } = defaultPosition(w));
 
   ballWin = new BrowserWindow({
@@ -146,6 +162,11 @@ function createBall() {
   ballWin.on('move', onBallMove);
   ballWin.on('close', e => { if (!quitting) { e.preventDefault(); ballWin.hide(); } });
   if (S('debug.devTools')) ballWin.webContents.openDevTools({ mode: 'detach' });
+  if (S('behavior.rememberPosition')) {
+    store.setHidden('_x', x);
+    store.setHidden('_y', y);
+    store.setHidden('_windowWidth', w);
+  }
   lastDisplayId = ballDisplay().id;
   log.info('main', `ball window created ${w}x${h} at ${x},${y}`);
 }
@@ -184,7 +205,8 @@ function resizeBall() {
   const { w, h } = ballSize();
   const b = ballWin.getBounds();
   if (b.width === w && b.height === h) return;
-  ballWin.setBounds({ x: b.x + Math.round((b.width - w) / 2), y: b.y, width: w, height: h });
+  const x = windowXForCenter(b.x + b.width / 2, b.y, w);
+  ballWin.setBounds({ x, y: b.y, width: w, height: h });
 }
 
 function showBall(focus) {
@@ -205,7 +227,7 @@ function onBallMove() {
   moveTimer = setTimeout(() => {
     if (!ballWin || ballWin.isDestroyed()) return;
     const b = ballWin.getBounds();
-    store.setHidden('_x', b.x); store.setHidden('_y', b.y);
+    store.setHidden('_x', b.x); store.setHidden('_y', b.y); store.setHidden('_windowWidth', b.width);
     const d = ballDisplay();
     if (d.id !== lastDisplayId) { lastDisplayId = d.id; log.info('main', `ball moved to display ${d.id}`); notifyCaptureChanged(); }
   }, 250);
