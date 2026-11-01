@@ -13,23 +13,30 @@
     <div id="ballHit" title="Click to talk · drag to move · right-click for menu"></div>
     <div id="badge" hidden></div>
 
-    <section id="panel" hidden>
-      <div id="panelClip"><canvas id="panelBackdrop"></canvas></div>
-      <div id="panelTint"></div>
-      <div id="messages" aria-live="polite"></div>
-      <div id="notice" hidden></div>
-      <div id="confirm" hidden>
-        <span id="confirmText"></span>
-        <button id="allowBtn" type="button">Allow</button>
-        <button id="denyBtn" type="button">Deny</button>
-      </div>
-      <div id="pickers"><div id="provChips" class="chips"></div><div id="effortChips" class="chips"></div></div>
-      <form id="composer" autocomplete="off">
-        <input id="input" type="text" spellcheck="false">
-        <button id="micBtn" type="button" hidden aria-label="Start voice input" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11Z"/></svg></button>
-        <button id="stopBtn" type="button" hidden aria-label="Stop">Stop</button>
-      </form>
-    <!-- Floating quick-action buttons beside the chat dialog -->
+    <!-- Centered chat group: just the dialogue panel -->
+    <div id="chatGroup">
+      <!-- Dialogue box: frosted, borderless, no window chrome -->
+      <section id="panel" hidden>
+        <div id="panelClip"><canvas id="panelBackdrop"></canvas></div>
+        <div id="panelTint"></div>
+        <div id="messages" aria-live="polite"></div>
+        <div id="notice" hidden></div>
+        <div id="confirm" hidden>
+          <span id="confirmText"></span>
+          <button id="allowBtn" type="button">Allow</button>
+          <button id="denyBtn" type="button">Deny</button>
+        </div>
+        <div id="pickers"><div id="provChips" class="chips"></div><div id="effortChips" class="chips"></div></div>
+        <form id="composer" autocomplete="off">
+          <input id="input" type="text" spellcheck="false" placeholder="Ask Crystal…">
+          <button id="sendBtn" type="button" title="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+          <button id="micBtn" type="button" hidden aria-label="Start voice input" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11Z"/></svg></button>
+          <button id="stopBtn" type="button" hidden aria-label="Stop">Stop</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- Two separate buttons anchored bottom-left of the stage (like the ball), separated from the chat box -->
     <section id="floatPanel" hidden>
       <button id="floatModel" type="button" title="Model provider (Ollama / OpenRouter / OpenAI-compatible)">
         <span class="ic">M</span><span class="lab">Model provider</span>
@@ -37,9 +44,8 @@
       <button id="floatWorkspace" type="button" title="Workspaces (switch the folder Crystal can access)">
         <span class="ic">W</span><span class="lab">Workspaces</span>
       </button>
-      <div id="floatMenu" class="floatMenu"></div>
-      <div id="floatToast" class="floatToast"></div>
-    </section>
+      <div id="floatMenu" class="floatMenu" hidden></div>
+      <div id="floatToast" class="floatToast" hidden></div>
     </section>
   </div>
   <script src="stt.js"></script>

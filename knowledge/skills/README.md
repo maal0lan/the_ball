@@ -28,7 +28,11 @@ After editing a bundled skill run `python scripts/update_skill_manifest.py`.
 
 | Skill file | Tools registered | Perm | Source |
 |------------|------------------|------|--------|
+| `find_any.py` | `find_any(pattern, path=".")` | read | [backend/skills/find_any.py](../backend/skills/find_any.py) |
+| `folder_profile.py` | `folder_profile(path=".")` | read | [backend/skills/folder_profile.py](../backend/skills/folder_profile.py) |
 | `get_time.py` | `get_time()` | misc | [backend/skills/get_time.py](../backend/skills/get_time.py) |
+| `settings_read.py` | `settings_read(section='')` | misc | [backend/skills/settings_read.py](../backend/skills/settings_read.py) |
+| `summarize_file.py` | `summarize_file(path)` | read | [backend/skills/summarize_file.py](../backend/skills/summarize_file.py) |
 | `system_info.py` | `system_info()` | misc | [backend/skills/system_info.py](../backend/skills/system_info.py) |
 | `fetch_url.py` | `fetch_url(url)` | net | [backend/skills/fetch_url.py](../backend/skills/fetch_url.py) |
 | `settings_read.py` | `settings_read(section='')` | misc | [backend/skills/settings_read.py](../backend/skills/settings_read.py) |

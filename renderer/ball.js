@@ -6,7 +6,7 @@ let S = {};
 const $ = id => document.getElementById(id);
 const el = { video: $('screenVideo'), glass: $('glass'), hit: $('ballHit'), badge: $('badge'), panel: $('panel'),
   backdrop: $('panelBackdrop'), msgs: $('messages'), notice: $('notice'), confirm: $('confirm'),
-  confirmText: $('confirmText'), input: $('input'), form: $('composer'), mic: $('micBtn'), stop: $('stopBtn'),
+  confirmText: $('confirmText'), input: $('input'), form: $('composer'), send: $('sendBtn'), mic: $('micBtn'), stop: $('stopBtn'),
   floatPanel: $('floatPanel'), floatModel: $('floatModel'), floatWorkspace: $('floatWorkspace'),
   floatMenu: $('floatMenu'), floatToast: $('floatToast') };
 
@@ -44,21 +44,30 @@ function applyLayout() {
 // ============================================================ screen capture (the "see-through" part)
 let capture = { has: false, disp: { x: 0, y: 0, width: 1920, height: 1080 }, stream: null };
 
+let captureGen = 0;     // startCapture() can be triggered several times in a row (display changes, moves, settings);
+                        // only the newest call may install a stream, otherwise a slow older one can overwrite it with the wrong screen
 async function startCapture() {
+  const gen = ++captureGen;
   stopCapture();
   if (!S['behavior.captureScreen']) { console.info('Desktop refraction is off (Settings → Behavior).'); return; }
   try {
     const info = await crystal.capture.info();
+    if (gen !== captureGen) return;
     if (!info.sourceId) throw new Error('no screen source');
-    capture.disp = info.display.bounds;
-    const maxW = info.maxWidth, maxH = Math.round(maxW * capture.disp.height / capture.disp.width);
-    capture.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: {
+    const disp = info.display.bounds;
+    const maxW = info.maxWidth, maxH = Math.round(maxW * disp.height / disp.width);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: {
       chromeMediaSource: 'desktop', chromeMediaSourceId: info.sourceId, maxWidth: maxW, maxHeight: maxH, maxFrameRate: info.fps } } });
-    el.video.srcObject = capture.stream;
+    if (gen !== captureGen) { stream.getTracks().forEach(t => t.stop()); return; }
+    capture.disp = disp;                      // geometry and pixels are installed together, from the same call
+    capture.stream = stream;
+    el.video.srcObject = stream;
     await el.video.play();
+    if (gen !== captureGen) return;
     capture.has = true;
     console.info(`Screen capture started: display ${info.display.id}, ${el.video.videoWidth}x${el.video.videoHeight}`);
   } catch (e) {
+    if (gen !== captureGen) return;
     capture.has = false;
     // Ignore AbortError from stopCapture race; treat as transient and retry on next user action
     if (e.name !== 'AbortError') console.error(`Screen capture failed: ${e.message}. The ball falls back to plain glass. (macOS: grant Screen Recording permission.)`);
@@ -502,6 +511,10 @@ el.form.addEventListener('submit', e => {
   if (speechListening) { stopSpeechInput(true); return; }
   if (speechStopping) return;
   const t = el.input.value; el.input.value = ''; sendChat(t);
+});
+el.send.addEventListener('click', () => {
+  const t = el.input.value; el.input.value = ''; sendChat(t);
+  el.input.focus();
 });
 el.mic.addEventListener('click', toggleSpeechRecognition);
 el.stop.addEventListener('click', stopEverything);
