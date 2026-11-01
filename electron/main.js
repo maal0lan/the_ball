@@ -20,6 +20,26 @@ let ballWin = null, settingsWin = null, consoleWin = null;
 let ballShownResolve;
 const ballShown = new Promise(r => { ballShownResolve = r; });
 let quitting = false, dragStart = null, lastDisplayId = null, moveTimer = null, captureNotifyTimer = null;
+// The screen the BALL is on. Not getDisplayMatching(window bounds): the window also holds the tall chat panel, so on a
+// multi-monitor setup most of the window can overlap a different screen than the ball does.
+function ballDisplay() {
+  const b = ballWin.getBounds();
+  const cy = b.y + 28 + Math.round(S('appearance.ballSize') / 2);      // stage margin (28) + ball radius
+  return screen.getDisplayNearestPoint({ x: Math.round(b.x + b.width / 2), y: cy });
+}
+
+// Pick the desktopCapturer source that belongs to `disp`. display_id can be empty/mismatched on some Windows setups,
+// so fall back to the screen's shape, then (last resort, logged) the list order.
+function pickCaptureSource(disp, sources) {
+  const byId = sources.find(s => s.display_id && s.display_id === String(disp.id));
+  if (byId) return { src: byId, how: 'display_id' };
+  const ar = disp.size.width / disp.size.height;
+  const shaped = sources.filter(s => { const t = s.thumbnail.getSize(); return t.height > 0 && Math.abs(t.width / t.height - ar) < 0.02; });
+  if (shaped.length === 1) return { src: shaped[0], how: 'aspect ratio' };
+  const idx = screen.getAllDisplays().findIndex(d => d.id === disp.id);
+  return { src: (shaped.length ? shaped : sources)[Math.max(0, idx)] || sources[0], how: 'list order (GUESS)' };
+}
+
 function notifyCaptureChanged() {
   clearTimeout(captureNotifyTimer);
   captureNotifyTimer = setTimeout(() => {
@@ -126,7 +146,7 @@ function createBall() {
   ballWin.on('move', onBallMove);
   ballWin.on('close', e => { if (!quitting) { e.preventDefault(); ballWin.hide(); } });
   if (S('debug.devTools')) ballWin.webContents.openDevTools({ mode: 'detach' });
-  lastDisplayId = screen.getDisplayMatching(ballWin.getBounds()).id;
+  lastDisplayId = ballDisplay().id;
   log.info('main', `ball window created ${w}x${h} at ${x},${y}`);
 }
 
@@ -186,7 +206,7 @@ function onBallMove() {
     if (!ballWin || ballWin.isDestroyed()) return;
     const b = ballWin.getBounds();
     store.setHidden('_x', b.x); store.setHidden('_y', b.y);
-    const d = screen.getDisplayMatching(b);
+    const d = ballDisplay();
     if (d.id !== lastDisplayId) { lastDisplayId = d.id; log.info('main', `ball moved to display ${d.id}`); notifyCaptureChanged(); }
   }, 250);
 }
@@ -331,19 +351,23 @@ function setupIpc() {
 
   ipcMain.handle('capture:info', async () => {
     await Promise.race([ballShown, new Promise(r => setTimeout(r, 5000))]);
-    const b = ballWin.getBounds();
-    const disp = screen.getDisplayMatching(b);
+    const disp = ballDisplay();
     lastDisplayId = disp.id;
     if (process.platform === 'darwin') {
       const st = systemPreferences.getMediaAccessStatus('screen');
       if (st !== 'granted') log.error('main', `macOS screen-recording permission is "${st}". Grant it in System Settings → Privacy & Security → Screen Recording, then restart.`);
     }
     let sources = [];
-    try { sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }); }
+    try { sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 256, height: 256 } }); }
     catch (e) { log.error('main', `desktopCapturer failed: ${e.message}`); }
-    const idx = screen.getAllDisplays().findIndex(d => d.id === disp.id);
-    const src = sources.find(s => s.display_id === String(disp.id)) || sources[idx] || sources[0];
+    const { src, how } = sources.length ? pickCaptureSource(disp, sources) : { src: null, how: '' };
     if (!src) log.error('main', 'No screen source available for capture.');
+    else {
+      const fmt = d => `${d.id} ${d.bounds.width}x${d.bounds.height}@${d.bounds.x},${d.bounds.y} x${d.scaleFactor}`;
+      log.info('main', `capture: ball on display ${fmt(disp)} → source ${src.id} (display_id "${src.display_id}") via ${how}`);
+      log.info('main', `capture: displays [${screen.getAllDisplays().map(fmt).join(' | ')}] sources [${sources.map(x => `${x.id}/"${x.display_id}"`).join(' | ')}]`);
+      if (how.includes('GUESS')) log.warn('main', 'Could not tell which screen source belongs to the ball\'s display; if the glass shows the wrong screen, send this log line.');
+    }
     return {
       sourceId: src ? src.id : null,
       display: { id: disp.id, bounds: disp.bounds, scaleFactor: disp.scaleFactor },

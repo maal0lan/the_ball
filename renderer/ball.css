@@ -27,7 +27,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: transparen
 #panelClip { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
 #panelBackdrop { position: absolute; left: -24px; top: -24px; width: calc(100% + 48px); height: calc(100% + 48px); }
 #panelTint { position: absolute; inset: 0; background: rgba(12, 17, 24, var(--dark)); }
-#panel > *:not(#panelClip):not(#panelTint) { position: relative; }
+/* zero specificity on purpose: it only lifts the panel's content above the backdrop, and any class (e.g. .dock { position:absolute }) can still override it */
+:where(#panel) > :where(*:not(#panelClip):not(#panelTint)) { position: relative; }
 
 #messages { flex: 1 1 auto; overflow-y: auto; padding: 16px 20px 6px; display: flex; flex-direction: column; gap: 10px;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px); mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
