@@ -52,5 +52,6 @@ contextBridge.exposeInMainWorld('crystal', {
     openDataFolder: () => invoke('app:open-data'),
     version: () => invoke('app:version'),
     quit: () => ipcRenderer.send('app:quit'),
+    restart: () => ipcRenderer.send('app:restart'),
   },
 });

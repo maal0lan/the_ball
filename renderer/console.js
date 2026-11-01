@@ -35,6 +35,12 @@ $('errOnly').onclick = () => { const only = !$('errOnly').classList.contains('on
 $('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); $('pause').textContent = paused ? 'Resume' : 'Pause'; if (!paused) { queued.forEach(push); queued = []; } };
 $('clear').onclick = () => crystal.log.clear();
 $('open').onclick = () => crystal.log.openFile();
+$('restart').onclick = () => {
+  if (!window.confirm('Restart Crystal now?')) return;
+  $('restart').disabled = true;
+  $('restart').textContent = 'Restarting…';
+  crystal.app.restart();
+};
 $('copy').onclick = async () => { const t = entries.filter(visible).map(e => `${new Date(e.ts).toISOString()} [${e.level.toUpperCase()}] ${e.source}: ${e.message}`).join('\n'); await navigator.clipboard.writeText(t); $('copy').textContent = 'Copied!'; setTimeout(() => $('copy').textContent = 'Copy visible', 1200); };
 
 function pill(info) { $('pill').textContent = `backend: ${info.state}${info.port ? ' :' + info.port : ''}`; $('pill').className = info.state; }

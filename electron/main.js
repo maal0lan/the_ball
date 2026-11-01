@@ -410,41 +410,14 @@ function setupIpc() {
   ipcMain.handle('app:open-data', () => shell.openPath(app.getPath('userData')));
   ipcMain.handle('app:version', () => ({ app: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, platform: process.platform }));
   ipcMain.on('app:quit', () => { quitting = true; app.quit(); });
+  ipcMain.on('app:restart', () => {
+    quitting = true;
+    app.relaunch();
+    app.quit();
+  });
 }
 
 // ---------------------------------------------------------------- lifecycle
-app.whenReady().then(async () => {
-  const userData = app.getPath('userData');
-  const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'shared', 'settings-schema.json'), 'utf8'));
-  try { store = new SettingsStore(path.join(userData, 'settings.json'), schema); }
-  catch (e) { dialog.showErrorBox('Crystal: settings error', e.message); app.quit(); return; }
-
-  log.init(path.join(userData, 'logs'), { minLevel: S('debug.logLevel'), max: S('debug.maxLogEntries'), toFile: S('debug.logToFile') });
-  log.onEntry(e => broadcast('log:entry', e));
-  log.info('main', `Crystal ${app.getVersion()} · Electron ${process.versions.electron} · ${process.platform} · data: ${userData}`);
-
-  backend = new BackendManager({ root: ROOT, dataDir: userData, settings: store });
-  backend.on('state', info => {
-    broadcast('backend:state', info);
-    if (info.state === 'ready') pushSettingsToBackend();
-  });
-
-  setupIpc();
-  Menu.setApplicationMenu(null);
-  createBall();
-  buildTray();
-  registerHotkey();
-  app.setLoginItemSettings({ openAtLogin: S('behavior.startWithSystem') });
-  screen.on('display-metrics-changed', () => ballWin && ballWin.webContents.send('capture:display-changed'));
-  if (S('debug.showConsoleOnStart')) openSingleton('console');
-  backend.start();
-  // Desktop shortcut can ask for every UI at once: ball + settings + debug console.
-  if (process.argv.includes('--open-all-uis') || process.env.CRYSTAL_OPEN_ALL_UIS === '1') {
-    setTimeout(() => { openSingleton('settings'); openSingleton('console'); }, 1500);
-  }
-  if (process.env.CRYSTAL_SELFTEST) require('./selftest')({ BrowserWindow, ballWin, log, openWindow: openSingleton });
-});
-
 app.on('window-all-closed', e => { if (!quitting) e.preventDefault(); });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', async e => {
